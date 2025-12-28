@@ -32,7 +32,7 @@ Thumbs.db
 docker-compose.override.yml
 
 # Database
-*.sql
+
 backup/
 
 # Temporary files
