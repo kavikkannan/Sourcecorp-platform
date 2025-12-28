@@ -1,0 +1,57 @@
+{
+  "name": "sourcecorp-backend",
+  "version": "1.0.0",
+  "description": "SourceCorp Platform Backend",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc || true",
+    "start": "node dist/index.js",
+    "migrate": "ts-node src/db/migrate.ts",
+    "migrate:hierarchy": "ts-node src/db/migrate-hierarchy.ts",
+    "migrate:source-type": "ts-node src/db/migrate-add-source-type.ts",
+    "migrate:notifications": "ts-node src/db/migrate-add-case-notifications.ts",
+    "migrate:finance-templates": "ts-node src/db/migrate-finance-templates.ts",
+    "migrate:phase4": "ts-node src/db/migrate-phase4-tasks-notes.ts",
+    "migrate:phase4-permissions": "ts-node src/db/migrate-phase4-permissions.ts",
+    "migrate:phase4-all": "ts-node src/db/migrate-phase4-all.ts",
+    "migrate:phase5-chat": "ts-node src/db/migrate-phase5-chat.ts",
+    "migrate:phase5-permissions": "ts-node src/db/migrate-phase5-permissions.ts",
+    "migrate:chat-enhancements": "ts-node src/db/migrate-chat-enhancements.ts",
+    "migrate:chat-permissions": "ts-node src/db/migrate-chat-permissions.ts",
+    "migrate:initial-obligation-template": "ts-node src/db/migrate-initial-obligation-template.ts",
+    "migrate:fix-obligation-items": "ts-node src/db/migrate-fix-obligation-items.ts",
+    "migrate:initial-cam-template": "ts-node src/db/migrate-initial-cam-template.ts"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "redis": "^4.6.11",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.22.4",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "multer": "^1.4.5-lts.1",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.14.0",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.10.5",
+    "@types/uuid": "^9.0.7",
+    "@types/multer": "^1.4.11",
+    "@types/pdfkit": "^0.13.0",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0"
+  }
+}
+
