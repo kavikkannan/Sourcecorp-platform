@@ -4,16 +4,18 @@ import PDFDocument from 'pdfkit';
 import { FinanceService } from './finance.service';
 import * as path from 'path';
 import * as fs from 'fs';
+import archiver from 'archiver';
+import { CRMService } from './crm.service';
 
 export class ExportService {
-  
+
   // ============================================
   // ELIGIBILITY EXPORT
   // ============================================
 
   static async exportEligibilityCSV(caseId: string): Promise<string> {
     const calculation = await FinanceService.getEligibilityByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -36,7 +38,7 @@ export class ExportService {
 
   static async exportEligibilityExcel(caseId: string): Promise<Buffer> {
     const calculation = await FinanceService.getEligibilityByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -86,7 +88,7 @@ export class ExportService {
 
   static async exportEligibilityPDF(caseId: string): Promise<Buffer> {
     const calculation = await FinanceService.getEligibilityByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name, loan_type FROM crm_schema.cases WHERE id = $1`,
@@ -100,7 +102,7 @@ export class ExportService {
     const caseData = caseResult.rows[0];
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ 
+      const doc = new PDFDocument({
         margin: 50,
         size: 'A4',
         info: {
@@ -124,11 +126,11 @@ export class ExportService {
         const col1X = margin + 10;
         const col2X = margin + col1Width;
         const textY = isHeader ? y + 7 : y + 5;
-        
+
         // Ensure value is a string and truncate if too long to prevent stack overflow
         const safeValue = String(value || '').substring(0, 100);
         const safeLabel = String(label || '').substring(0, 50);
-        
+
         if (isHeader) {
           doc.rect(margin, y, pageWidth - 2 * margin, 25)
             .fillColor('#1e40af')
@@ -160,7 +162,7 @@ export class ExportService {
         path.join(process.cwd(), 'src/assets/logo.png'), // Alternative
         path.join(process.cwd(), 'backend/src/assets/logo.png'), // Docker alternative
       ];
-      
+
       let logoPath: string | null = null;
       for (const possiblePath of possibleLogoPaths) {
         try {
@@ -172,9 +174,9 @@ export class ExportService {
           // Continue to next path
         }
       }
-      
+
       let yPos = 50;
-      
+
       if (logoPath) {
         try {
           doc.image(logoPath, 50, yPos, { width: 80, height: 80 });
@@ -189,12 +191,12 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#1e40af')
         .text('Sourcecorp Solution', 150, yPos + 20);
-      
+
       doc.fontSize(10)
         .font('Helvetica')
         .fillColor('#6b7280')
         .text('Loan Eligibility Calculation Report', 150, yPos + 50);
-      
+
       yPos = 150;
 
       // Draw a line separator
@@ -203,7 +205,7 @@ export class ExportService {
         .strokeColor('#e5e7eb')
         .lineWidth(1)
         .stroke();
-      
+
       yPos += 30;
 
       // Case Information Table
@@ -211,18 +213,18 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Case Information', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Value', true);
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Case Number', String(caseData.case_number || ''));
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Customer Name', String(caseData.customer_name || ''));
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Loan Type', String(caseData.loan_type || ''));
       yPos += 30;
 
@@ -231,34 +233,34 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Calculation Details', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Value', true);
       yPos += 25;
-      
+
       const monthlyIncome = Number(calculation.monthly_income) || 0;
       const eligibleAmount = Number(calculation.eligible_amount) || 0;
       const requestedAmount = Number(calculation.requested_amount) || 0;
-      
+
       drawTableRow(yPos, 'Monthly Income', `₹${monthlyIncome.toLocaleString('en-IN')}`);
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Eligible Amount', `₹${eligibleAmount.toLocaleString('en-IN')}`);
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Requested Amount', `₹${requestedAmount.toLocaleString('en-IN')}`);
       yPos += 20;
-      
+
       // Result with color coding
       const resultColor = calculation.result === 'ELIGIBLE' ? '#10b981' : '#ef4444';
       const resultBg = calculation.result === 'ELIGIBLE' ? '#d1fae5' : '#fee2e2';
-      
+
       const pageWidth = doc.page.width;
       const margin = 50;
       const col1Width = (pageWidth - 2 * margin) * 0.4;
       const col2Width = (pageWidth - 2 * margin) * 0.6;
-      
+
       doc.rect(margin, yPos, pageWidth - 2 * margin, 20)
         .fillColor(resultBg)
         .fill();
@@ -269,18 +271,18 @@ export class ExportService {
       doc.fillColor(resultColor)
         .font('Helvetica-Bold')
         .text(String(calculation.result || ''), margin + col1Width, yPos + 5);
-      
+
       yPos += 30;
 
       // Footer with timestamp
       try {
         const calculatedDate = calculation.calculated_at ? new Date(calculation.calculated_at) : new Date();
-        const dateStr = calculatedDate.toLocaleString('en-IN', { 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric', 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        const dateStr = calculatedDate.toLocaleString('en-IN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
         });
         const timestampText = `Calculated At: ${String(dateStr).substring(0, 100)}`;
         doc.fontSize(9)
@@ -312,7 +314,7 @@ export class ExportService {
 
   static async exportObligationCSV(caseId: string): Promise<string> {
     const sheet = await FinanceService.getObligationSheetByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -363,7 +365,7 @@ export class ExportService {
 
   static async exportObligationExcel(caseId: string): Promise<Buffer> {
     const sheet = await FinanceService.getObligationSheetByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -436,7 +438,7 @@ export class ExportService {
 
   static async exportObligationPDF(caseId: string): Promise<Buffer> {
     const sheet = await FinanceService.getObligationSheetByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -450,7 +452,7 @@ export class ExportService {
     const caseData = caseResult.rows[0];
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ 
+      const doc = new PDFDocument({
         margin: 50,
         size: 'A4',
         info: {
@@ -474,11 +476,11 @@ export class ExportService {
         const col1X = margin + 10;
         const col2X = margin + col1Width;
         const textY = isHeader ? y + 7 : y + 5;
-        
+
         // Ensure values are strings and truncate if too long to prevent stack overflow
         const safeCol1 = String(col1 || '').substring(0, 100);
         const safeCol2 = String(col2 || '').substring(0, 100);
-        
+
         if (isHeader) {
           doc.rect(margin, y, pageWidth - 2 * margin, 25)
             .fillColor('#1e40af')
@@ -510,7 +512,7 @@ export class ExportService {
         path.join(process.cwd(), 'src/assets/logo.png'), // Alternative
         path.join(process.cwd(), 'backend/src/assets/logo.png'), // Docker alternative
       ];
-      
+
       let logoPath: string | null = null;
       for (const possiblePath of possibleLogoPaths) {
         try {
@@ -522,9 +524,9 @@ export class ExportService {
           // Continue to next path
         }
       }
-      
+
       let yPos = 50;
-      
+
       if (logoPath) {
         try {
           doc.image(logoPath, 50, yPos, { width: 80, height: 80 });
@@ -539,12 +541,12 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#1e40af')
         .text('Sourcecorp Solution', 150, yPos + 20, { align: 'left' });
-      
+
       doc.fontSize(10)
         .font('Helvetica')
         .fillColor('#6b7280')
         .text('Monthly Obligation Sheet', 150, yPos + 50, { align: 'left' });
-      
+
       yPos = 150;
 
       // Draw a line separator
@@ -553,7 +555,7 @@ export class ExportService {
         .strokeColor('#e5e7eb')
         .lineWidth(1)
         .stroke();
-      
+
       yPos += 30;
 
       // Case Information Table
@@ -561,15 +563,15 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Case Information', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Value', true);
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Case Number', caseData.case_number);
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Customer Name', caseData.customer_name);
       yPos += 30;
 
@@ -578,9 +580,9 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Obligation Items', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Description', 'Monthly EMI', true);
       yPos += 25;
 
@@ -613,7 +615,7 @@ export class ExportService {
       const margin = 50;
       const col1Width = (pageWidth - 2 * margin) * 0.6;
       const col2Width = (pageWidth - 2 * margin) * 0.4;
-      
+
       doc.rect(margin, yPos, pageWidth - 2 * margin, 25)
         .fillColor('#1e40af')
         .fill();
@@ -622,7 +624,7 @@ export class ExportService {
         .font('Helvetica-Bold')
         .text('TOTAL', margin + 10, yPos + 7);
       doc.text(`₹${sheet.total_obligation.toLocaleString('en-IN')}`, margin + col1Width, yPos + 7);
-      
+
       yPos += 35;
 
       // Summary Table
@@ -630,24 +632,24 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Summary', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Amount', true);
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Total Obligation', `₹${sheet.total_obligation.toLocaleString('en-IN')}`);
       yPos += 20;
-      
+
       drawTableRow(yPos, 'Net Income', `₹${sheet.net_income.toLocaleString('en-IN')}`);
 
       // Footer
       doc.fontSize(8)
         .font('Helvetica')
         .fillColor('#9ca3af')
-        .text('Sourcecorp Solution - Confidential Document', 50, doc.page.height - 30, { 
+        .text('Sourcecorp Solution - Confidential Document', 50, doc.page.height - 30, {
           align: 'center',
-          width: doc.page.width - 100 
+          width: doc.page.width - 100
         });
 
       doc.end();
@@ -660,7 +662,7 @@ export class ExportService {
 
   static async exportCAMCSV(caseId: string): Promise<string> {
     const entry = await FinanceService.getCAMEntryByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number FROM crm_schema.cases WHERE id = $1`,
@@ -672,10 +674,10 @@ export class ExportService {
     }
 
     const caseData = caseResult.rows[0];
-    
+
     const camData = entry.cam_data as Record<string, any>;
     const lines = ['Case Number,Field,Value'];
-    
+
     // Flatten CAM data
     const flatten = (obj: any, prefix = ''): Array<[string, any]> => {
       const result: Array<[string, any]> = [];
@@ -700,7 +702,7 @@ export class ExportService {
 
   static async exportCAMExcel(caseId: string): Promise<Buffer> {
     const entry = await FinanceService.getCAMEntryByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number FROM crm_schema.cases WHERE id = $1`,
@@ -753,7 +755,7 @@ export class ExportService {
 
   static async exportCAMPDF(caseId: string): Promise<Buffer> {
     const entry = await FinanceService.getCAMEntryByCaseId(caseId);
-    
+
     // Get case data directly from database
     const caseResult = await query(
       `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
@@ -767,7 +769,7 @@ export class ExportService {
     const caseData = caseResult.rows[0];
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ 
+      const doc = new PDFDocument({
         margin: 50,
         size: 'A4',
         info: {
@@ -791,11 +793,11 @@ export class ExportService {
         const col1X = margin + 10;
         const col2X = margin + col1Width;
         const textY = isHeader ? y + 7 : y + 5;
-        
+
         // Ensure values are strings and truncate if too long to prevent stack overflow
         const safeLabel = String(label || '').substring(0, 50);
         const safeValue = String(value !== null && value !== undefined ? value : '').substring(0, 100);
-        
+
         if (isHeader) {
           doc.rect(margin, y, pageWidth - 2 * margin, 25)
             .fillColor('#1e40af')
@@ -827,7 +829,7 @@ export class ExportService {
         path.join(process.cwd(), 'src/assets/logo.png'), // Alternative
         path.join(process.cwd(), 'backend/src/assets/logo.png'), // Docker alternative
       ];
-      
+
       let logoPath: string | null = null;
       for (const possiblePath of possibleLogoPaths) {
         try {
@@ -839,9 +841,9 @@ export class ExportService {
           // Continue to next path
         }
       }
-      
+
       let yPos = 50;
-      
+
       if (logoPath) {
         try {
           doc.image(logoPath, 50, yPos, { width: 80, height: 80 });
@@ -856,12 +858,12 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#1e40af')
         .text('Sourcecorp Solution', 150, yPos + 20, { align: 'left' });
-      
+
       doc.fontSize(10)
         .font('Helvetica')
         .fillColor('#6b7280')
         .text('Credit Assessment Memo (CAM) / Working Sheet', 150, yPos + 50, { align: 'left' });
-      
+
       yPos = 150;
 
       // Draw a line separator
@@ -870,7 +872,7 @@ export class ExportService {
         .strokeColor('#e5e7eb')
         .lineWidth(1)
         .stroke();
-      
+
       yPos += 30;
 
       // Case Information Table
@@ -878,20 +880,20 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('Case Information', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Value', true);
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Case Number', caseData.case_number);
       yPos += 20;
-      
+
       if (caseData.customer_name) {
         drawTableRow(yPos, 'Customer Name', caseData.customer_name);
         yPos += 20;
       }
-      
+
       drawTableRow(yPos, 'Version', String(entry.version || '1'));
       yPos += 30;
 
@@ -900,9 +902,9 @@ export class ExportService {
         .font('Helvetica-Bold')
         .fillColor('#111827')
         .text('CAM Data', 50, yPos);
-      
+
       yPos += 25;
-      
+
       drawTableRow(yPos, 'Field', 'Value', true);
       yPos += 25;
 
@@ -936,12 +938,119 @@ export class ExportService {
       doc.fontSize(8)
         .font('Helvetica')
         .fillColor('#9ca3af')
-        .text('Sourcecorp Solution - Confidential Document', 50, doc.page.height - 30, { 
+        .text('Sourcecorp Solution - Confidential Document', 50, doc.page.height - 30, {
           align: 'center',
-          width: doc.page.width - 100 
+          width: doc.page.width - 100
         });
 
       doc.end();
+    });
+  }
+
+  // ============================================
+  // CASE ARCHIVE EXPORT
+  // ============================================
+
+  static async generateCaseArchiveFile(
+    jobId: string,
+    caseIds: string[],
+    userId: string,
+    userRole: string,
+    userTeams: string[],
+    onProgress?: (progress: number) => void
+  ): Promise<string> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const exportsDir = path.join(process.cwd(), 'uploads', 'exports');
+        await fs.promises.mkdir(exportsDir, { recursive: true });
+
+        const fileName = `cases_export_${Date.now()}_${jobId}.zip`;
+        const filePath = path.join(exportsDir, fileName);
+
+        const output = fs.createWriteStream(filePath);
+        const archive = archiver('zip', {
+          zlib: { level: 9 }, // Maximum compression
+        });
+
+        output.on('close', () => {
+          resolve(filePath);
+        });
+
+        archive.on('error', (err) => {
+          reject(err);
+        });
+
+        archive.pipe(output);
+
+        const totalCases = caseIds.length;
+
+        for (let i = 0; i < totalCases; i++) {
+          const caseId = caseIds[i];
+
+          // 1. Fetch case details - checks RBAC implicitly!
+          const caseData = await CRMService.getCaseById(caseId, userId, userRole);
+
+          if (!caseData) {
+            // User has no access, or case doesn't exist. Skip safely.
+            continue;
+          }
+
+          const caseFolder = `case_${caseData.case_number}`;
+
+          // Add basic case summary JSON
+          archive.append(JSON.stringify(caseData, null, 2), {
+            name: `${caseFolder}/case-summary.json`,
+          });
+
+          // Fetch other data in parallel
+          const [notes, timeline, notifications, documents] = await Promise.all([
+            CRMService.getNotes(caseId),
+            CRMService.getTimeline(caseId),
+            CRMService.getCaseNotifications(caseId),
+            CRMService.getDocuments(caseId),
+          ]);
+
+          archive.append(JSON.stringify(notes, null, 2), {
+            name: `${caseFolder}/notes.json`,
+          });
+
+          archive.append(JSON.stringify(timeline, null, 2), {
+            name: `${caseFolder}/timeline.json`,
+          });
+
+          archive.append(JSON.stringify(notifications, null, 2), {
+            name: `${caseFolder}/notifications.json`,
+          });
+
+          // Process documents
+          for (const doc of documents) {
+            try {
+              if (doc.file_path) {
+                // Check if file exists using access
+                await fs.promises.access(doc.file_path);
+                archive.file(doc.file_path, { name: `${caseFolder}/documents/${doc.file_name}` });
+              }
+            } catch (err) {
+              // If file is missing, we could skip or document the error. Let's append an error note.
+              archive.append(`File not found on system: ${doc.file_path}`, {
+                name: `${caseFolder}/documents/ERROR_${doc.file_name}.txt`
+              });
+            }
+          }
+
+          // Progress update
+          if (onProgress) {
+            const progress = Math.round(((i + 1) / totalCases) * 100);
+            onProgress(progress);
+          }
+        }
+
+        // Finalize limits the stream explicitly
+        await archive.finalize();
+
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 }

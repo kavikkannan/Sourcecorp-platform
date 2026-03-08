@@ -54,6 +54,17 @@ export default function CasesPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [templateFields, setTemplateFields] = useState<any[]>([]);
 
+  // Export State
+  const [selectedCases, setSelectedCases] = useState<string[]>([]);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportState, setExportState] = useState<{
+    status: 'idle' | 'processing' | 'completed' | 'error';
+    jobId?: string;
+    progress: number;
+    errorText?: string;
+  }>({ status: 'idle', progress: 0 });
+  const [exportScope, setExportScope] = useState<'selected' | 'my' | 'team'>('selected');
+
   const loadSubordinates = useCallback(async () => {
     if (viewType !== 'team') {
       setSubordinates([]);
@@ -120,7 +131,7 @@ export default function CasesPage() {
 
     // Validate all fields
     const errors: Record<string, string> = {};
-    
+
     // Validate Customer Name
     if (!newCase.customer_name.trim()) {
       errors.customer_name = 'Customer name is required';
@@ -179,9 +190,9 @@ export default function CasesPage() {
     // Validate file sizes if files are selected
     if (selectedFiles.length > 0) {
       const maxFileSize = 10 * 1024 * 1024; // 10MB
-      const oversizedFiles = selectedFiles.filter(file => file.size > maxFileSize);
+      const oversizedFiles = selectedFiles.filter((file: any) => file.size > maxFileSize);
       if (oversizedFiles.length > 0) {
-        errors.documents = `Some files exceed 10MB limit: ${oversizedFiles.map(f => f.name).join(', ')}`;
+        errors.documents = `Some files exceed 10MB limit: ${oversizedFiles.map((f: any) => f.name).join(', ')}`;
       }
     }
 
@@ -266,6 +277,71 @@ export default function CasesPage() {
     }
   };
 
+  const handleExportCases = async () => {
+    try {
+      setExportState((prev: any) => ({ ...prev, status: 'processing', progress: 0, errorText: undefined }));
+
+      let idsToExport = selectedCases;
+      if (idsToExport.length === 0) {
+        setExportState((prev: any) => ({ ...prev, status: 'error', errorText: 'No cases selected' }));
+        return;
+      }
+
+      const response = await crmService.exportCases(idsToExport);
+
+      if (response.sync) {
+        setExportState((prev: any) => ({ ...prev, status: 'completed', progress: 100, jobId: response.jobId }));
+        await downloadExport(response.jobId);
+      } else {
+        setExportState((prev: any) => ({ ...prev, status: 'processing', progress: 0, jobId: response.jobId }));
+        pollExportStatus(response.jobId);
+      }
+    } catch (error: any) {
+      setExportState((prev: any) => ({
+        ...prev,
+        status: 'error',
+        errorText: error.response?.data?.error || 'Failed to start export'
+      }));
+    }
+  };
+
+  const pollExportStatus = (jobId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const status = await crmService.getExportJobStatus(jobId);
+        setExportState((prev: any) => ({ ...prev, progress: status.progress }));
+
+        if (status.state === 'completed') {
+          clearInterval(interval);
+          setExportState((prev: any) => ({ ...prev, status: 'completed', progress: 100 }));
+          await downloadExport(jobId);
+        } else if (status.state === 'failed') {
+          clearInterval(interval);
+          setExportState((prev: any) => ({ ...prev, status: 'error', errorText: 'Export job failed' }));
+        }
+      } catch (error) {
+        clearInterval(interval);
+        setExportState((prev: any) => ({ ...prev, status: 'error', errorText: 'Failed to check status' }));
+      }
+    }, 2000);
+  };
+
+  const downloadExport = async (jobId: string) => {
+    try {
+      const blob = await crmService.downloadExportArchive(jobId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cases_export_${jobId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (error) {
+      setExportState((prev: any) => ({ ...prev, status: 'error', errorText: 'Failed to download file' }));
+    }
+  };
+
 
   return (
     <div>
@@ -286,11 +362,11 @@ export default function CasesPage() {
                   type="text"
                   placeholder="Search by case number, customer name, or email..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e: any) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
-              
+
               {/* Individual/Team Toggle */}
               <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
                 <button
@@ -298,11 +374,10 @@ export default function CasesPage() {
                     setViewType('individual');
                     setPage(0);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    viewType === 'individual'
-                      ? 'bg-white text-primary-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewType === 'individual'
+                    ? 'bg-white text-primary-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   <User className="w-4 h-4" />
                   Individual
@@ -312,11 +387,10 @@ export default function CasesPage() {
                     setViewType('team');
                     setPage(0);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    viewType === 'team'
-                      ? 'bg-white text-primary-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewType === 'team'
+                    ? 'bg-white text-primary-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   <Users className="w-4 h-4" />
                   Team
@@ -324,12 +398,39 @@ export default function CasesPage() {
               </div>
             </div>
 
-            {hasPermission('crm.case.create') && (
-              <Button onClick={() => setShowCreateModal(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                New Case
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {hasPermission('crm.case.export') && selectedCases.length > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setExportScope('selected');
+                    setShowExportModal(true);
+                    setExportState({ status: 'idle', progress: 0 });
+                  }}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Export Selected ({selectedCases.length})
+                </Button>
+              )}
+              {hasPermission('crm.case.export') && selectedCases.length === 0 && (
+                <Button
+                  variant="secondary"
+                  className="bg-white"
+                  onClick={() => {
+                    setExportScope(viewType === 'team' ? 'team' : 'my');
+                    setShowExportModal(true);
+                    setExportState({ status: 'idle', progress: 0 });
+                  }}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Bulk Export
+                </Button>
+              )}
+              {hasPermission('crm.case.create') && (
+                <Button onClick={() => setShowCreateModal(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Case
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Advanced Filters */}
@@ -338,14 +439,14 @@ export default function CasesPage() {
               <Filter className="w-4 h-4" />
               Filters:
             </div>
-            
+
             {/* Month Filter - Beautiful Design */}
             <div className="w-full sm:w-52">
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none z-10" />
                 <select
                   value={monthFilter}
-                  onChange={(e) => {
+                  onChange={(e: any) => {
                     setMonthFilter(e.target.value);
                     setPage(0);
                   }}
@@ -377,12 +478,12 @@ export default function CasesPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="w-full sm:w-48">
               <Select
                 label=""
                 value={statusFilter}
-                onChange={(e) => {
+                onChange={(e: any) => {
                   setStatusFilter(e.target.value);
                   setPage(0);
                 }}
@@ -400,7 +501,7 @@ export default function CasesPage() {
                 <Select
                   label=""
                   value={userFilter}
-                  onChange={(e) => {
+                  onChange={(e: any) => {
                     setUserFilter(e.target.value);
                     setPage(0);
                   }}
@@ -408,7 +509,7 @@ export default function CasesPage() {
                   disabled={loadingSubordinates}
                   options={[
                     { value: '', label: loadingSubordinates ? 'Loading users...' : 'All Users' },
-                    ...subordinates.map(user => ({
+                    ...subordinates.map((user: any) => ({
                       value: user.id,
                       label: `${user.first_name} ${user.last_name}`
                     }))
@@ -502,6 +603,17 @@ export default function CasesPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-10">
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                        checked={filteredCases.length > 0 && selectedCases.length === filteredCases.length}
+                        onChange={(e: any) => {
+                          if (e.target.checked) setSelectedCases(filteredCases.map(c => c.id));
+                          else setSelectedCases([]);
+                        }}
+                      />
+                    </th>
                     <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                       Case Number
                     </th>
@@ -523,7 +635,7 @@ export default function CasesPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredCases.map((caseItem) => (
+                  {filteredCases.map((caseItem: any) => (
                     <motion.tr
                       key={caseItem.id}
                       initial={{ opacity: 0 }}
@@ -531,6 +643,17 @@ export default function CasesPage() {
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => router.push(`/crm/cases/${caseItem.id}`)}
                     >
+                      <td className="px-6 py-4 whitespace-nowrap" onClick={(e: any) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                          checked={selectedCases.includes(caseItem.id)}
+                          onChange={(e: any) => {
+                            if (e.target.checked) setSelectedCases(prev => [...prev, caseItem.id]);
+                            else setSelectedCases(prev => prev.filter(id => id !== caseItem.id));
+                          }}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-semibold text-primary-600">
                           {caseItem.case_number}
@@ -572,7 +695,7 @@ export default function CasesPage() {
                           {new Date(caseItem.created_at).toLocaleDateString()}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-6 py-4 whitespace-nowrap text-center" onClick={(e: any) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => handleViewCustomerDetails(caseItem)}
@@ -581,15 +704,15 @@ export default function CasesPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                        <Dropdown
-                          items={[
-                            {
-                              label: 'View Details',
-                              onClick: () => router.push(`/crm/cases/${caseItem.id}`),
-                              icon: <Eye className="w-4 h-4" />,
-                            },
-                          ]}
-                        />
+                          <Dropdown
+                            items={[
+                              {
+                                label: 'View Details',
+                                onClick: () => router.push(`/crm/cases/${caseItem.id}`),
+                                icon: <Eye className="w-4 h-4" />,
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </motion.tr>
@@ -608,14 +731,14 @@ export default function CasesPage() {
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  onClick={() => setPage((p: any) => Math.max(0, p - 1))}
                   disabled={page === 0}
                 >
                   Previous
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={() => setPage(p => p + 1)}
+                  onClick={() => setPage((p: any) => p + 1)}
                   disabled={(page + 1) * limit >= total}
                 >
                   Next
@@ -648,7 +771,7 @@ export default function CasesPage() {
               name="customer_name"
               label="Customer Name"
               value={newCase.customer_name}
-              onChange={(e) => {
+              onChange={(e: any) => {
                 setNewCase({ ...newCase, customer_name: e.target.value });
                 if (fieldErrors.customer_name) {
                   setFieldErrors({ ...fieldErrors, customer_name: '' });
@@ -664,7 +787,7 @@ export default function CasesPage() {
               label="Customer Email"
               type="email"
               value={newCase.customer_email}
-              onChange={(e) => {
+              onChange={(e: any) => {
                 setNewCase({ ...newCase, customer_email: e.target.value });
                 if (fieldErrors.customer_email) {
                   setFieldErrors({ ...fieldErrors, customer_email: '' });
@@ -680,7 +803,7 @@ export default function CasesPage() {
               label="Customer Phone"
               type="tel"
               value={newCase.customer_phone}
-              onChange={(e) => {
+              onChange={(e: any) => {
                 setNewCase({ ...newCase, customer_phone: e.target.value });
                 if (fieldErrors.customer_phone) {
                   setFieldErrors({ ...fieldErrors, customer_phone: '' });
@@ -696,7 +819,7 @@ export default function CasesPage() {
               name="loan_type"
               label="Loan Type"
               value={newCase.loan_type}
-              onChange={(e) => {
+              onChange={(e: any) => {
                 setNewCase({ ...newCase, loan_type: e.target.value });
                 if (fieldErrors.loan_type) {
                   setFieldErrors({ ...fieldErrors, loan_type: '' });
@@ -715,7 +838,7 @@ export default function CasesPage() {
               step="0.01"
               min="0"
               value={loanAmountInput}
-              onChange={(e) => {
+              onChange={(e: any) => {
                 setLoanAmountInput(e.target.value);
                 const amount = parseFloat(e.target.value);
                 if (!isNaN(amount)) {
@@ -734,14 +857,14 @@ export default function CasesPage() {
           <Select
             label="Source Type"
             value={newCase.source_type || ''}
-            onChange={(e) => setNewCase({ ...newCase, source_type: e.target.value as 'DSA' | 'DST' | null || null })}
+            onChange={(e: any) => setNewCase({ ...newCase, source_type: e.target.value as 'DSA' | 'DST' | null || null })}
             options={[
               { value: '', label: 'Select Source Type (Optional)' },
               { value: 'DSA', label: 'DSA' },
               { value: 'DST', label: 'DST' },
             ]}
           />
-          
+
           {/* Document Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -763,20 +886,20 @@ export default function CasesPage() {
                   className="hidden"
                   multiple
                   accept="image/*,.pdf,.xlsx,.xls,.doc,.docx"
-                  onChange={(e) => {
+                  onChange={(e: any) => {
                     const files = Array.from(e.target.files || []);
                     const maxFileSize = 10 * 1024 * 1024; // 10MB
                     const validFiles: File[] = [];
                     const errors: string[] = [];
-                    
-                    files.forEach(file => {
+
+                    files.forEach((file: any) => {
                       if (file.size > maxFileSize) {
                         errors.push(`${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) exceeds 10MB limit`);
                       } else {
                         validFiles.push(file);
                       }
                     });
-                    
+
                     if (errors.length > 0) {
                       setFieldErrors({ ...fieldErrors, documents: errors.join(', ') });
                     } else if (fieldErrors.documents) {
@@ -784,7 +907,7 @@ export default function CasesPage() {
                       delete newErrors.documents;
                       setFieldErrors(newErrors);
                     }
-                    
+
                     setSelectedFiles((prev) => [...prev, ...validFiles]);
                   }}
                 />
@@ -858,9 +981,9 @@ export default function CasesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(() => {
                 const visibleFields = templateFields.length > 0
-                  ? templateFields.filter(f => f.is_visible).map(f => f.field_key)
+                  ? templateFields.filter((f: any) => f.is_visible).map(f => f.field_key)
                   : null;
-                
+
                 return Object.entries(customerDetails.detail_data || {})
                   .filter(([key]) => {
                     if (key.startsWith('raw_')) return false;
@@ -879,7 +1002,7 @@ export default function CasesPage() {
                       .split('_')
                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                       .join(' ');
-                    
+
                     return (
                       <div key={key} className="p-3 bg-gray-50 rounded-lg">
                         <p className="text-xs text-gray-500 mb-1">{formattedKey}</p>
@@ -901,6 +1024,78 @@ export default function CasesPage() {
           </div>
         )}
       </Modal>
+
+      {/* Export Options Modal */}
+      <Modal
+        isOpen={showExportModal}
+        onClose={() => {
+          if (exportState.status !== 'processing') {
+            setShowExportModal(false);
+            setExportState({ status: 'idle', progress: 0 });
+          }
+        }}
+        title="Export Cases"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            You are about to export {selectedCases.length} case(s). This includes case details, notes, timeline events, notifications, and all uploaded documents in a ZIP archive.
+          </p>
+
+          {exportState.errorText && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">{exportState.errorText}</p>
+            </div>
+          )}
+
+          {exportState.status === 'processing' && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Generating Archive...</span>
+                <span>{exportState.progress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="bg-primary-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${exportState.progress}%` }}></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Please wait while we gather and package the files. Large exports may take several minutes.
+              </p>
+            </div>
+          )}
+
+          {exportState.status === 'completed' && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+              <FileSpreadsheet className="w-8 h-8 text-green-500 mx-auto mb-2" />
+              <p className="text-green-800 font-medium">Export Completed Successfully</p>
+              <p className="text-sm text-green-700 mt-1">Your download should begin automatically.</p>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowExportModal(false);
+                setExportState({ status: 'idle', progress: 0 });
+              }}
+              className="flex-1"
+              disabled={exportState.status === 'processing'}
+            >
+              {exportState.status === 'completed' ? 'Close' : 'Cancel'}
+            </Button>
+
+            {exportState.status === 'idle' && (
+              <Button
+                onClick={handleExportCases}
+                className="flex-1"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Start Export
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

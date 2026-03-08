@@ -6,11 +6,11 @@ import { HierarchyService } from './hierarchy.service';
 import fs from 'fs/promises';
 
 export class CRMService {
-  
+
   // ============================================
   // CASE MANAGEMENT
   // ============================================
-  
+
   static async createCase(data: {
     customer_name: string;
     customer_email: string;
@@ -91,7 +91,7 @@ export class CRMService {
     month?: string; // Format: 'YYYY-MM'
   }): Promise<{ cases: CaseWithDetails[], total: number }> {
     const { userId, userRole, userTeams, status, view_type, created_by, limit = 20, offset = 0, month } = filters;
-    
+
     let whereClause = 'WHERE 1=1';
     const params: any[] = [];
     let paramIndex = 1;
@@ -413,7 +413,7 @@ export class CRMService {
         email: caseData.creator_email,
         first_name: caseData.creator_first_name,
         last_name: caseData.creator_last_name,
-      } : undefined,
+      } as any : undefined,
       assignments,
       current_assignment: assignments.length > 0 ? assignments[0] : undefined,
     };
@@ -855,7 +855,7 @@ export class CRMService {
           [manager.id]
         );
         const managerTeamIds = managerTeamsResult.rows.map(row => row.team_id);
-        
+
         // Only include if manager shares at least one team with user
         const sharedTeams = userTeamIds.filter(id => managerTeamIds.includes(id));
         if (sharedTeams.length === 0 && userTeamIds.length > 0) {
@@ -879,7 +879,7 @@ export class CRMService {
           [sub.id]
         );
         const subTeamIds = subTeamsResult.rows.map(row => row.team_id);
-        
+
         // Only include if subordinate shares at least one team with user
         const sharedTeams = userTeamIds.filter(id => subTeamIds.includes(id));
         if (sharedTeams.length === 0 && userTeamIds.length > 0) {
@@ -906,7 +906,7 @@ export class CRMService {
     // Validate that scheduled_for is in user's hierarchy (above or below)
     const scheduleableUsers = await this.getScheduleableUsers(data.scheduled_by);
     const allScheduleable = [...scheduleableUsers.above, ...scheduleableUsers.below];
-    
+
     if (!allScheduleable.find(u => u.id === data.scheduled_for)) {
       throw new Error('Cannot schedule notification: User is not in your hierarchy or is in a different team');
     }
@@ -934,8 +934,8 @@ export class CRMService {
       action: 'case.schedule_notification',
       resourceType: 'case',
       resourceId: data.case_id,
-      details: { 
-        scheduled_for: data.scheduled_for, 
+      details: {
+        scheduled_for: data.scheduled_for,
         scheduled_at: data.scheduled_at,
         message: data.message,
         document_id: data.document_id
@@ -1016,7 +1016,7 @@ export class CRMService {
     offset?: number;
   }): Promise<{ notifications: any[]; total: number }> {
     const { is_read, completion_status, due_date_from, due_date_to, limit = 50, offset = 0 } = filters || {};
-    
+
     let whereClause = 'WHERE n.scheduled_for = $1';
     const params: any[] = [userId];
     let paramIndex = 2;
@@ -1211,41 +1211,41 @@ export class CRMService {
     const detailData: any = {};
 
     // Field mapping based on the image provided
-    const fieldMappings: { [key: string]: string } = {
-      'Reference / Date': 'reference_date',
-      'CRO NAME': 'cro_name',
-      'Location': 'location',
-      'Scheme': 'scheme',
-      'Name': 'name',
-      'DATE OF BIRTH / AGE': 'date_of_birth',
-      'AADHAR NUMBER': 'aadhar_number',
-      'PAN Card Number': 'pan_number',
-      'Father Name': 'father_name',
-      'Mother Name': 'mother_name',
-      'Marital Status / name': 'marital_status',
-      'Current Address': 'current_address',
-      'Landmark': 'current_landmark',
-      'Own house / Rented': 'current_residence_type',
-      'Permanent Address': 'permanent_address',
-      'Landmark': 'permanent_landmark',
-      'Mobile No': 'mobile_number',
-      'Personal Mail ID': 'personal_email',
-      'Official Mail ID': 'official_email',
-      'Office Name': 'office_name',
-      'Office Address': 'office_address',
-      'Landmark': 'office_landmark',
-      'Designation': 'designation',
-      'Gross pay / Net pay': 'salary',
-      'Education Qualification': 'education_qualification',
-      'Salary account Bank Name': 'bank_name',
-      'Bank IFSC Code': 'bank_ifsc',
-      'Bank Account Number': 'bank_account_number',
-      'UAN NUMBER (PF NO)': 'uan_number',
-    };
+    const fieldMappings: Array<[string, string]> = [
+      ['Reference / Date', 'reference_date'],
+      ['CRO NAME', 'cro_name'],
+      ['Location', 'location'],
+      ['Scheme', 'scheme'],
+      ['Name', 'name'],
+      ['DATE OF BIRTH / AGE', 'date_of_birth'],
+      ['AADHAR NUMBER', 'aadhar_number'],
+      ['PAN Card Number', 'pan_number'],
+      ['Father Name', 'father_name'],
+      ['Mother Name', 'mother_name'],
+      ['Marital Status / name', 'marital_status'],
+      ['Current Address', 'current_address'],
+      ['Landmark', 'current_landmark'],
+      ['Own house / Rented', 'current_residence_type'],
+      ['Permanent Address', 'permanent_address'],
+      ['Landmark', 'permanent_landmark'],
+      ['Mobile No', 'mobile_number'],
+      ['Personal Mail ID', 'personal_email'],
+      ['Official Mail ID', 'official_email'],
+      ['Office Name', 'office_name'],
+      ['Office Address', 'office_address'],
+      ['Landmark', 'office_landmark'],
+      ['Designation', 'designation'],
+      ['Gross pay / Net pay', 'salary'],
+      ['Education Qualification', 'education_qualification'],
+      ['Salary account Bank Name', 'bank_name'],
+      ['Bank IFSC Code', 'bank_ifsc'],
+      ['Bank Account Number', 'bank_account_number'],
+      ['UAN NUMBER (PF NO)', 'uan_number'],
+    ];
 
     // Read data from Excel (assuming format: Column A = Label, Column B = Value)
     const usedFields = new Set<string>();
-    
+
     for (let row = 1; row <= worksheet.rowCount; row++) {
       const labelCell = worksheet.getCell(`A${row}`);
       const valueCell = worksheet.getCell(`B${row}`);
@@ -1258,13 +1258,13 @@ export class CRMService {
 
         let matched = false;
         // Find matching field key
-        for (const [excelLabel, fieldKey] of Object.entries(fieldMappings)) {
+        for (const [excelLabel, fieldKey] of fieldMappings) {
           const normalizedLabel = label.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normalizedExcelLabel = excelLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
-          
-          if (normalizedLabel === normalizedExcelLabel || 
-              normalizedLabel.includes(normalizedExcelLabel) || 
-              normalizedExcelLabel.includes(normalizedLabel)) {
+
+          if (normalizedLabel === normalizedExcelLabel ||
+            normalizedLabel.includes(normalizedExcelLabel) ||
+            normalizedExcelLabel.includes(normalizedLabel)) {
             if (!usedFields.has(fieldKey)) {
               detailData[fieldKey] = value || 'Not mentioned';
               usedFields.add(fieldKey);
@@ -1625,12 +1625,12 @@ export class CRMService {
 
     // Apply the changes
     const changes = request.requested_changes;
-    
+
     // Separate case fields from customer detail sheet fields
     const caseFields = ['customer_name', 'customer_email', 'customer_phone', 'loan_type', 'loan_amount', 'source_type'];
     const caseChanges: Record<string, any> = {};
     const detailSheetChanges: Record<string, any> = {};
-    
+
     Object.keys(changes).forEach(key => {
       if (caseFields.includes(key)) {
         caseChanges[key] = changes[key];
@@ -1766,7 +1766,7 @@ export class CRMService {
 
     // Filter users who have the modify permission
     const usersWithPermission: User[] = [];
-    
+
     for (const user of aboveUsers) {
       const permissionResult = await query(
         `SELECT 1 FROM auth_schema.user_roles ur

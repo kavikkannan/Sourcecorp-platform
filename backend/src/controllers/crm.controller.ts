@@ -5,18 +5,21 @@ import { query } from '../db/pool';
 import fs from 'fs/promises';
 import path from 'path';
 import { AuditService } from '../services/audit.service';
+import { QueueService } from '../services/queue.service';
+import { ExportService } from '../services/export.service';
+import { v4 as uuidv4 } from 'uuid';
 
 export class CRMController {
-  
+
   // ============================================
   // CASE MANAGEMENT
   // ============================================
-  
+
   static async createCase(req: AuthRequest, res: Response) {
     try {
       const { customer_name, customer_email, customer_phone, loan_type, loan_amount, source_type } = req.body;
       const files = (req.files as Express.Multer.File[]) || [];
-      
+
       // Handle source_type: convert empty string to null
       const normalizedSourceType = source_type && source_type.trim() !== '' ? source_type : null;
 
@@ -134,14 +137,14 @@ export class CRMController {
           id: c.id,
           case_number: c.case_number,
           customer_name: c.customer_name,
-        customer_email: c.customer_email,
-        customer_phone: c.customer_phone,
-        loan_type: c.loan_type,
-        loan_amount: c.loan_amount,
-        source_type: c.source_type,
-        current_status: c.current_status,
-        created_at: c.created_at,
-        updated_at: c.updated_at,
+          customer_email: c.customer_email,
+          customer_phone: c.customer_phone,
+          loan_type: c.loan_type,
+          loan_amount: c.loan_amount,
+          source_type: c.source_type,
+          current_status: c.current_status,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
           creator: c.creator ? {
             id: c.creator.id,
             email: c.creator.email,
@@ -377,7 +380,7 @@ export class CRMController {
       const documents = await CRMService.getDocuments(id);
 
       res.json({
-        documents: documents.map(d => ({
+        documents: documents.map((d: any) => ({
           id: d.id,
           file_name: d.file_name,
           mime_type: d.mime_type,
@@ -424,7 +427,7 @@ export class CRMController {
 
       // Read and send file
       const fileBuffer = await fs.readFile(document.file_path);
-      
+
       res.setHeader('Content-Type', document.mime_type);
       res.setHeader('Content-Disposition', `attachment; filename="${document.file_name}"`);
       res.send(fileBuffer);
@@ -487,14 +490,14 @@ export class CRMController {
       );
 
       res.status(201).json({
-        id: newNote.id,
-        note: newNote.note,
-        created_at: newNote.created_at,
-        document: newNote.document_id ? {
-          id: newNote.document_id,
-          file_name: newNote.document_file_name,
-          mime_type: newNote.document_mime_type,
-          file_size: newNote.document_file_size,
+        id: (newNote as any).id,
+        note: (newNote as any).note,
+        created_at: (newNote as any).created_at,
+        document: (newNote as any).document_id ? {
+          id: (newNote as any).document_id,
+          file_name: (newNote as any).document_file_name,
+          mime_type: (newNote as any).document_mime_type,
+          file_size: (newNote as any).document_file_size,
         } : null,
       });
     } catch (error) {
@@ -509,7 +512,7 @@ export class CRMController {
       const notes = await CRMService.getNotes(id);
 
       res.json({
-        notes: notes.map(n => ({
+        notes: notes.map((n: any) => ({
           id: n.id,
           note: n.note,
           created_at: n.created_at,
@@ -1003,6 +1006,142 @@ export class CRMController {
     } catch (error: any) {
       console.error('Error in rejectCustomerDetailChangeRequest:', error);
       return res.status(500).json({ error: error.message || 'Failed to reject change request' });
+    }
+  }
+
+  // ============================================
+  // CASE ARCHIVE EXPORT
+  // ============================================
+
+  /**
+   * POST /api/crm/cases/export
+   * Initiate a case export job
+   */
+  static async exportCases(req: AuthRequest, res: Response) {
+    try {
+      const { caseIds } = req.body;
+      const userId = req.user!.userId;
+
+      if (!Array.isArray(caseIds) || caseIds.length === 0) {
+        return res.status(400).json({ error: 'Valid caseIds array is required' });
+      }
+
+      // 1. Audit log export start
+      const { AuditService } = require('../services/audit.service');
+      await AuditService.createLog({
+        userId,
+        action: 'crm.case.export.start',
+        resourceType: 'case_export',
+        details: { case_ids: caseIds, count: caseIds.length },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      // 2. Fetch user details to get hierarchy access mapping
+      const { CRMService } = require('../services/crm.service');
+      const { hierarchy, teams } = await CRMService.getExportAccessDetails(userId);
+
+      // 3. Initiate the export via ExportService
+      const { ExportService } = require('../services/export.service');
+      const exportResult = await ExportService.generateCaseArchiveFile({
+        caseIds,
+        userId,
+        // Passing user context down to respect RBAC/hierarchy inside the service
+        hierarchy,
+        teams,
+      });
+
+      if (exportResult.type === 'sync') {
+        // Prepare immediate download for sync export
+        // Determine exact path, return standard response payload instructing frontend to download
+        return res.status(200).json({
+          status: 'completed',
+          jobId: exportResult.jobId,
+          message: 'Export completed synchronously'
+        });
+      } else {
+        // Async queue response
+        return res.status(202).json({
+          status: 'processing',
+          jobId: exportResult.jobId,
+          message: 'Export started in background. Polling expected.'
+        });
+      }
+
+    } catch (error: any) {
+      console.error('Error in exportCases:', error);
+      return res.status(500).json({ error: error.message || 'Failed to initiate export' });
+    }
+  }
+
+  /**
+   * GET /api/crm/cases/export/:jobId
+   * Get the status of an ongoing export job
+   */
+  static async getExportJobStatus(req: AuthRequest, res: Response) {
+    try {
+      const { jobId } = req.params;
+
+      const { QueueService } = require('../services/queue.service');
+
+      // Attempt to check if job is finished by checking fs
+      const { ExportService } = require('../services/export.service');
+      const fsJobStatus = await ExportService.checkExportJobFilepathStatus(jobId);
+
+      if (fsJobStatus.status === 'completed') {
+        return res.status(200).json(fsJobStatus);
+      }
+
+      // Check redis job status
+      const jobStatus = await QueueService.getExportJobStatus(jobId);
+
+      if (!jobStatus) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      return res.status(200).json(jobStatus);
+
+    } catch (error: any) {
+      console.error('Error getting export job status:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get export status' });
+    }
+  }
+
+  /**
+   * GET /api/crm/cases/export/download/:jobId
+   * Download the generated ZIP file for an export job
+   */
+  static async downloadExportArchive(req: AuthRequest, res: Response) {
+    try {
+      const { jobId } = req.params;
+      const userId = req.user!.userId;
+
+      const { ExportService } = require('../services/export.service');
+      const { AuditService } = require('../services/audit.service');
+
+      const archivePath = await ExportService.getExportArchivePath(jobId);
+
+      if (!archivePath) {
+        return res.status(404).json({ error: 'Archive file not found or expired' });
+      }
+
+      // Audit the download action
+      await AuditService.createLog({
+        userId,
+        action: 'crm.case.export.download',
+        resourceType: 'case_export',
+        resourceId: jobId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename=case-export-${jobId}.zip`);
+      res.download(archivePath);
+
+    } catch (error: any) {
+      console.error('Error downloading export archive:', error);
+      return res.status(500).json({ error: 'Failed to download archive file' });
     }
   }
 }

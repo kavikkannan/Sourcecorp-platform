@@ -1,0 +1,41 @@
+src/controllers/crm.controller.ts(389,23): error TS2339: Property 'uploader_email' does not exist on type 'Document'.
+src/controllers/crm.controller.ts(390,22): error TS2339: Property 'uploader_email' does not exist on type 'Document'.
+src/controllers/crm.controller.ts(391,24): error TS2339: Property 'uploader_first_name' does not exist on type 'Document'.
+src/controllers/crm.controller.ts(391,49): error TS2339: Property 'uploader_last_name' does not exist on type 'Document'.
+src/controllers/crm.controller.ts(496,27): error TS2339: Property 'document_id' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(497,23): error TS2339: Property 'document_id' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(498,30): error TS2339: Property 'document_file_name' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(499,30): error TS2339: Property 'document_mime_type' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(500,30): error TS2339: Property 'document_file_size' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(519,22): error TS2339: Property 'creator_email' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(520,22): error TS2339: Property 'creator_email' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(521,24): error TS2339: Property 'creator_first_name' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(521,48): error TS2339: Property 'creator_last_name' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(523,23): error TS2339: Property 'document_id' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(524,19): error TS2339: Property 'document_id' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(525,26): error TS2339: Property 'document_file_name' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(526,26): error TS2339: Property 'document_mime_type' does not exist on type 'CaseNote'.
+src/controllers/crm.controller.ts(527,26): error TS2339: Property 'document_file_size' does not exist on type 'CaseNote'.
+src/routes/crm.routes.ts(279,17): error TS2339: Property 'exportCases' does not exist on type 'typeof CRMController'.
+src/routes/crm.routes.ts(286,17): error TS2339: Property 'getExportJobStatus' does not exist on type 'typeof CRMController'.
+src/routes/crm.routes.ts(293,17): error TS2339: Property 'downloadExportArchive' does not exist on type 'typeof CRMController'.
+src/services/chat.service.ts(939,26): error TS2339: Property 'log' does not exist on type 'typeof AuditService'.
+src/services/chat.service.ts(991,26): error TS2339: Property 'log' does not exist on type 'typeof AuditService'.
+src/services/chat.service.ts(1049,26): error TS2339: Property 'log' does not exist on type 'typeof AuditService'.
+src/services/crm.service.ts(411,7): error TS2739: Type '{ id: any; email: any; first_name: any; last_name: any; }' is missing the following properties from type 'User': is_active, created_at, updated_at
+src/services/crm.service.ts(1230,7): error TS1117: An object literal cannot have multiple properties with the same name.
+src/services/crm.service.ts(1236,7): error TS1117: An object literal cannot have multiple properties with the same name.
+src/utils/jwt.ts(6,14): error TS2769: No overload matches this call.
+  Overload 1 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: null, options?: SignOptions & { algorithm: "none"; }): string', gave the following error.
+    Argument of type 'string' is not assignable to parameter of type 'null'.
+  Overload 2 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: Buffer<ArrayBufferLike> | Secret | PrivateKeyInput | JsonWebKeyInput, options?: SignOptions): string', gave the following error.
+    Type 'string' is not assignable to type 'number | StringValue'.
+  Overload 3 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: Buffer<ArrayBufferLike> | Secret | PrivateKeyInput | JsonWebKeyInput, callback: SignCallback): void', gave the following error.
+    Object literal may only specify known properties, and 'expiresIn' does not exist in type 'SignCallback'.
+src/utils/jwt.ts(12,14): error TS2769: No overload matches this call.
+  Overload 1 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: null, options?: SignOptions & { algorithm: "none"; }): string', gave the following error.
+    Argument of type 'string' is not assignable to parameter of type 'null'.
+  Overload 2 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: Buffer<ArrayBufferLike> | Secret | PrivateKeyInput | JsonWebKeyInput, options?: SignOptions): string', gave the following error.
+    Type 'string' is not assignable to type 'number | StringValue'.
+  Overload 3 of 5, '(payload: string | object | Buffer<ArrayBufferLike>, secretOrPrivateKey: Buffer<ArrayBufferLike> | Secret | PrivateKeyInput | JsonWebKeyInput, callback: SignCallback): void', gave the following error.
+    Object literal may only specify known properties, and 'expiresIn' does not exist in type 'SignCallback'.

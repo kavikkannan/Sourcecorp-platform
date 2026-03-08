@@ -6,6 +6,7 @@ import { connectRedis, redisClient } from './db/redis';
 import { createServer } from 'http';
 import { WebSocketService } from './services/websocket.service';
 import { setWebSocketService } from './controllers/chat.controller';
+import './workers/export.worker';
 
 let webSocketService: WebSocketService;
 
@@ -40,7 +41,7 @@ const startServer = async () => {
 // Handle graceful shutdown
 const shutdown = async () => {
   logger.info('Shutting down gracefully...');
-  
+
   try {
     if (webSocketService) {
       webSocketService.getIO().close();

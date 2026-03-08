@@ -144,11 +144,11 @@ export const crmService = {
     formData.append('customer_phone', data.customer_phone);
     formData.append('loan_type', data.loan_type);
     formData.append('loan_amount', data.loan_amount.toString());
-    
+
     if (data.source_type) {
       formData.append('source_type', data.source_type);
     }
-    
+
     if (data.documents && data.documents.length > 0) {
       data.documents.forEach((file) => {
         formData.append('documents', file);
@@ -394,6 +394,24 @@ export const crmService = {
   async rejectCustomerDetailChangeRequest(requestId: string, remarks?: string): Promise<any> {
     const response = await api.post(`/crm/customer-detail-change-requests/${requestId}/reject`, {
       remarks,
+    });
+    return response.data;
+  },
+
+  // Case Archive Export
+  async exportCases(caseIds: string[]): Promise<{ jobId: string; status: string; sync: boolean }> {
+    const response = await api.post('/crm/cases/export', { caseIds });
+    return response.data;
+  },
+
+  async getExportJobStatus(jobId: string): Promise<{ id: string; state: string; progress: number }> {
+    const response = await api.get(`/crm/cases/export/${jobId}`);
+    return response.data;
+  },
+
+  async downloadExportArchive(jobId: string): Promise<Blob> {
+    const response = await api.get(`/crm/cases/export/download/${jobId}`, {
+      responseType: 'blob',
     });
     return response.data;
   },

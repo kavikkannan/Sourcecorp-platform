@@ -209,7 +209,7 @@ export class ChatService {
 
     // For GROUP channels, add explicitly requested members
     if (data.type === 'GROUP' && data.requested_members && data.requested_members.length > 0) {
-      const values = data.requested_members.map((userId, index) => 
+      const values = data.requested_members.map((userId, index) =>
         `($1, $${index + 2})`
       ).join(', ');
       await query(
@@ -872,7 +872,7 @@ export class ChatService {
         console.error('Error parsing requested_members:', error, 'Value:', row.requested_members);
         requestedMembers = [];
       }
-      
+
       return {
         id: row.id,
         requested_by: row.requested_by,
@@ -936,14 +936,14 @@ export class ChatService {
 
     // Audit log
     if (auditData) {
-      await AuditService.log({
-        user_id: userId,
+      await AuditService.createLog({
+        userId: userId,
         action: 'DELETE',
-        resource_type: 'CHAT_CHANNEL',
-        resource_id: channelId,
+        resourceType: 'CHAT_CHANNEL',
+        resourceId: channelId,
         details: { channel_name: channel.name, channel_type: channel.type },
-        ip_address: auditData.ipAddress,
-        user_agent: auditData.userAgent,
+        ipAddress: auditData.ipAddress,
+        userAgent: auditData.userAgent,
       });
     }
   }
@@ -988,14 +988,14 @@ export class ChatService {
 
     // Audit log
     if (auditData) {
-      await AuditService.log({
-        user_id: userId,
+      await AuditService.createLog({
+        userId: userId,
         action: 'DELETE',
-        resource_type: 'CHAT_MESSAGE',
-        resource_id: messageId,
+        resourceType: 'CHAT_MESSAGE',
+        resourceId: messageId,
         details: { channel_id: message.channel_id, content_preview: message.content?.substring(0, 50) },
-        ip_address: auditData.ipAddress,
-        user_agent: auditData.userAgent,
+        ipAddress: auditData.ipAddress,
+        userAgent: auditData.userAgent,
       });
     }
   }
@@ -1046,18 +1046,18 @@ export class ChatService {
 
     // Audit log
     if (auditData) {
-      await AuditService.log({
-        user_id: userId,
+      await AuditService.createLog({
+        userId: userId,
         action: 'UPDATE',
-        resource_type: 'CHAT_CHANNEL',
-        resource_id: channelId,
-        details: { 
-          old_name: channel.name, 
+        resourceType: 'CHAT_CHANNEL',
+        resourceId: channelId,
+        details: {
+          old_name: channel.name,
           new_name: newName.trim(),
-          channel_type: channel.type 
+          channel_type: channel.type
         },
-        ip_address: auditData.ipAddress,
-        user_agent: auditData.userAgent,
+        ipAddress: auditData.ipAddress,
+        userAgent: auditData.userAgent,
       });
     }
 

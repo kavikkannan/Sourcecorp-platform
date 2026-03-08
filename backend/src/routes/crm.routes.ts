@@ -268,6 +268,31 @@ router.post(
   CRMController.rejectCustomerDetailChangeRequest
 );
 
+// ============================================
+// CASE ARCHIVE EXPORT
+// ============================================
+
+// Initiate case export (sync or async based on count)
+router.post(
+  '/cases/export',
+  requirePermission('crm.case.export'),
+  CRMController.exportCases
+);
+
+// Get export job status
+router.get(
+  '/cases/export/:jobId',
+  requirePermission('crm.case.export'),
+  CRMController.getExportJobStatus
+);
+
+// Download export archive
+router.get(
+  '/cases/export/download/:jobId',
+  requirePermission('crm.case.export'),
+  CRMController.downloadExportArchive
+);
+
 export default router;
 
 
