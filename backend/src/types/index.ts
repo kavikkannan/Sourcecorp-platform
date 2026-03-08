@@ -40,6 +40,8 @@ export interface Announcement {
   content: string;
   author_id: string;
   is_active: boolean;
+  image_path?: string | null;
+  category: 'GENERAL' | 'BANK_UPDATES';
   created_at: Date;
   updated_at: Date;
 }
@@ -138,14 +140,13 @@ export interface TimelineEvent {
 
 export const CaseStatus = {
   NEW: 'NEW',
-  ASSIGNED: 'ASSIGNED',
-  IN_PROGRESS: 'IN_PROGRESS',
-  PENDING_DOCUMENTS: 'PENDING_DOCUMENTS',
-  UNDER_REVIEW: 'UNDER_REVIEW',
-  APPROVED: 'APPROVED',
-  REJECTED: 'REJECTED',
+  LOGIN: 'LOGIN',
+  SALES_REWORK: 'SALES_REWORK',
+  CREDIT_REWORK: 'CREDIT_REWORK',
+  CREDIT_UNDERWRITING: 'CREDIT_UNDERWRITING',
+  CREDIT_APPROVED: 'CREDIT_APPROVED',
   DISBURSED: 'DISBURSED',
-  CLOSED: 'CLOSED',
+  REJECTED: 'REJECTED',
 } as const;
 
 export type CaseStatusType = typeof CaseStatus[keyof typeof CaseStatus];

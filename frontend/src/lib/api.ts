@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -31,6 +31,7 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
 
+    // Handle 401 Unauthorized - token expired or invalid
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
@@ -51,16 +52,27 @@ api.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return api(originalRequest);
           } catch (refreshError) {
-            // Refresh failed, clear tokens and redirect to login
+            // Refresh failed, clear all auth data and redirect to login
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
-            window.location.href = '/login';
+            
+            // Redirect to login page
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login';
+            }
             return Promise.reject(refreshError);
           }
         } else {
-          // No refresh token, redirect to login
-          window.location.href = '/login';
+          // No refresh token, clear auth data and redirect to login
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('user');
+          
+          // Redirect to login page if not already there
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
         }
       }
     }

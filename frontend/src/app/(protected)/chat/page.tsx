@@ -22,6 +22,8 @@ import {
   XCircle,
   Clock,
   FolderPlus,
+  Trash2,
+  Edit2,
 } from 'lucide-react';
 import { chatService, Channel, Message, User, ChannelCreationRequest, Attachment } from '@/lib/chat';
 import { format } from 'date-fns';
@@ -168,6 +170,9 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedChannelRef = useRef<Channel | null>(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameChannelName, setRenameChannelName] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -555,6 +560,48 @@ export default function ChatPage() {
     }
   };
 
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Are you sure you want to delete this message?')) {
+      return;
+    }
+
+    try {
+      await chatService.deleteMessage(messageId);
+      // Remove message from local state
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (error: any) {
+      console.error('Failed to delete message:', error);
+      alert(error.response?.data?.error || 'Failed to delete message');
+    }
+  };
+
+  const handleRenameChannel = async () => {
+    if (!selectedChannel || renaming || !renameChannelName.trim()) return;
+
+    setRenaming(true);
+    try {
+      const updatedChannel = await chatService.renameChannel(
+        selectedChannel.id,
+        renameChannelName.trim()
+      );
+      // Update selected channel
+      setSelectedChannel(updatedChannel);
+      // Update in channels list
+      setChannels((prev) =>
+        prev.map((c) => (c.id === updatedChannel.id ? updatedChannel : c))
+      );
+      setShowRenameModal(false);
+      setRenameChannelName('');
+      alert('Channel renamed successfully');
+    } catch (error: any) {
+      console.error('Failed to rename channel:', error);
+      alert(error.response?.data?.error || 'Failed to rename channel');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const handleTyping = () => {
     if (!selectedChannel || !socket) return;
 
@@ -600,7 +647,7 @@ export default function ChatPage() {
   if (loading) {
     return (
       <ProtectedRoute requiredPermission="chat.channel.view">
-        <div className="min-h-screen flex items-center justify-center">
+        <div className="h-full w-full flex items-center justify-center bg-white">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
         </div>
       </ProtectedRoute>
@@ -609,13 +656,11 @@ export default function ChatPage() {
 
   return (
     <ProtectedRoute requiredPermission="chat.channel.view">
-      <div className="min-h-screen bg-gray-50">
-        <div className="h-screen flex flex-col">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex-1 m-4">
-            <div className="flex h-full">
-              {/* Channel List */}
-              <div className="w-64 border-r border-gray-200 flex flex-col">
-                <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+      <div className="fixed bg-white flex flex-col overflow-hidden" style={{ top: '4rem', left: '16rem', right: 0, bottom: 0, height: 'calc(100vh - 4rem)' }}>
+        <div className="flex flex-1 overflow-hidden min-h-0" style={{ height: '100%' }}>
+          {/* Channel List */}
+          <div className="w-64 border-r border-gray-200 flex flex-col min-h-0">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                   <h2 className="text-lg font-semibold text-gray-900">Channels</h2>
                   <div className="flex gap-2">
                     <button
@@ -669,7 +714,7 @@ export default function ChatPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto min-h-0">
                   {/* Direct Messages */}
                   {groupedChannels.DM.length > 0 && (
                     <div className="p-2">
@@ -797,7 +842,7 @@ export default function ChatPage() {
                 </div>
 
                 {/* Connection Status */}
-                <div className="p-2 border-t border-gray-200">
+                <div className="p-2 border-t border-gray-200 flex-shrink-0">
                   <div className="flex items-center gap-2 text-xs text-gray-500">
                     <div
                       className={`w-2 h-2 rounded-full ${
@@ -810,33 +855,47 @@ export default function ChatPage() {
               </div>
 
               {/* Message Area */}
-              <div className="flex-1 flex flex-col">
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 {selectedChannel ? (
                   <>
                     {/* Channel Header */}
-                    <div className="p-4 border-b border-gray-200">
-                      <div className="flex items-center gap-2">
-                        {getChannelIcon(selectedChannel.type)}
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {selectedChannel.name || 'Direct Message'}
-                        </h3>
-                        {selectedChannel.status === 'PENDING' && (
-                          <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
-                            Pending
-                          </span>
+                    <div className="p-4 border-b border-gray-200 flex-shrink-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {getChannelIcon(selectedChannel.type)}
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {selectedChannel.name || 'Direct Message'}
+                          </h3>
+                          {selectedChannel.status === 'PENDING' && (
+                            <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                        {hasPermission('chat.channel.rename') && selectedChannel.type !== 'DM' && (
+                          <button
+                            onClick={() => {
+                              setRenameChannelName(selectedChannel.name || '');
+                              setShowRenameModal(true);
+                            }}
+                            className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            title="Rename channel"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
                         )}
                       </div>
                     </div>
 
                     {/* Messages */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col min-h-0 overscroll-contain">
                       <AnimatePresence>
                         {messages.map((message) => (
                           <motion.div
                             key={message.id}
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="flex gap-3"
+                            className="flex gap-3 group"
                           >
                             <div className="flex-shrink-0">
                               <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
@@ -853,6 +912,15 @@ export default function ChatPage() {
                                 <span className="text-xs text-gray-500">
                                   {format(new Date(message.created_at), 'MMM d, h:mm a')}
                                 </span>
+                                {(hasPermission('chat.delete') || message.sender_id === user?.id) && (
+                                  <button
+                                    onClick={() => handleDeleteMessage(message.id)}
+                                    className="ml-auto p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                    title="Delete message"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
                               {message.content && (
                                 <div className="text-gray-700 mb-2">{message.content}</div>
@@ -896,55 +964,55 @@ export default function ChatPage() {
                       <div ref={messagesEndRef} />
                     </div>
 
-                    {/* Message Input */}
-                    <div className="p-4 border-t border-gray-200">
-                    {/* File Previews */}
-                    {selectedFiles.length > 0 && (
-                      <div className="mb-3">
-                        <div className="text-xs text-gray-500 mb-2 px-1">
-                          {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                          {selectedFiles.map((file, index) => {
-                            const preview = filePreviews.get(file.name);
-                            const isImage = file.type.startsWith('image/');
-                            return (
-                              <div
-                                key={`${file.name}-${index}`}
-                                className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden"
-                              >
-                                <button
-                                  onClick={() => handleRemoveFile(file.name)}
-                                  className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors z-10 opacity-0 group-hover:opacity-100"
-                                  title="Remove file"
+                    {/* Message Input - Fixed at bottom */}
+                    <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
+                      {/* File Previews */}
+                      {selectedFiles.length > 0 && (
+                        <div className="mb-3">
+                          <div className="text-xs text-gray-500 mb-2 px-1">
+                            {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                            {selectedFiles.map((file, index) => {
+                              const preview = filePreviews.get(file.name);
+                              const isImage = file.type.startsWith('image/');
+                              return (
+                                <div
+                                  key={`${file.name}-${index}`}
+                                  className="relative group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden"
                                 >
-                                  <X className="w-3 h-3" />
-                                </button>
-                                {isImage && preview ? (
-                                  <div className="aspect-square">
-                                    <img
-                                      src={preview}
-                                      alt="Preview"
-                                      className="w-full h-full object-cover"
-                                    />
+                                  <button
+                                    onClick={() => handleRemoveFile(file.name)}
+                                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors z-10 opacity-0 group-hover:opacity-100"
+                                    title="Remove file"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                  {isImage && preview ? (
+                                    <div className="aspect-square">
+                                      <img
+                                        src={preview}
+                                        alt="Preview"
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="aspect-square flex flex-col items-center justify-center p-2">
+                                      <Paperclip className="w-8 h-8 text-gray-400 mb-1" />
+                                      <p className="text-xs text-gray-600 text-center truncate w-full px-1" title={file.name}>
+                                        {file.name}
+                                      </p>
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 truncate">
+                                    {(file.size / 1024).toFixed(1)} KB
                                   </div>
-                                ) : (
-                                  <div className="aspect-square flex flex-col items-center justify-center p-2">
-                                    <Paperclip className="w-8 h-8 text-gray-400 mb-1" />
-                                    <p className="text-xs text-gray-600 text-center truncate w-full px-1" title={file.name}>
-                                      {file.name}
-                                    </p>
-                                  </div>
-                                )}
-                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs px-1 py-0.5 truncate">
-                                  {(file.size / 1024).toFixed(1)} KB
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                       <div className="flex gap-2">
                         <input
                           type="file"
@@ -1007,8 +1075,6 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
       {/* Create Channel Modal */}
       {showCreateModal && (
@@ -1469,6 +1535,82 @@ export default function ChatPage() {
                       <CheckCircle className="w-4 h-4" />
                       Approve
                     </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Rename Channel Modal */}
+      {showRenameModal && selectedChannel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">Rename Channel</h3>
+                <button
+                  onClick={() => {
+                    setShowRenameModal(false);
+                    setRenameChannelName('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Channel Name
+                  </label>
+                  <input
+                    type="text"
+                    value={renameChannelName}
+                    onChange={(e) => setRenameChannelName(e.target.value)}
+                    placeholder="Enter channel name"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    disabled={renaming}
+                    autoFocus
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !renaming && renameChannelName.trim()) {
+                        handleRenameChannel();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowRenameModal(false);
+                    setRenameChannelName('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={renaming}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRenameChannel}
+                  disabled={renaming || !renameChannelName.trim()}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {renaming ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Renaming...
+                    </>
+                  ) : (
+                    'Rename Channel'
                   )}
                 </button>
               </div>

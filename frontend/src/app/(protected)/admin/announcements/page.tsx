@@ -15,6 +15,8 @@ interface Announcement {
   title: string;
   content: string;
   is_active: boolean;
+  category: 'GENERAL' | 'BANK_UPDATES' | 'SALES_REPORT';
+  image_path?: string | null;
   author_name: string;
   author_email: string;
   created_at: string;
@@ -27,7 +29,10 @@ export default function AnnouncementsPage() {
   const [formData, setFormData] = useState({
     title: '',
     content: '',
+    category: 'GENERAL' as 'GENERAL' | 'BANK_UPDATES' | 'SALES_REPORT',
   });
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -37,9 +42,22 @@ export default function AnnouncementsPage() {
   const fetchAnnouncements = async () => {
     try {
       const response = await api.get('/admin/announcements');
-      setAnnouncements(response.data);
+      const data = response.data;
+      
+      // Handle new format: { announcements: [...], total: ... }
+      if (data?.announcements && Array.isArray(data.announcements)) {
+        setAnnouncements(data.announcements);
+      } 
+      // Handle old format: direct array
+      else if (Array.isArray(data)) {
+        setAnnouncements(data);
+      } 
+      else {
+        setAnnouncements([]);
+      }
     } catch (error) {
       console.error('Failed to fetch announcements:', error);
+      setAnnouncements([]);
     } finally {
       setLoading(false);
     }
@@ -50,14 +68,40 @@ export default function AnnouncementsPage() {
     setSubmitting(true);
 
     try {
-      await api.post('/admin/announcements', formData);
+      const formDataToSend = new FormData();
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('content', formData.content);
+      formDataToSend.append('category', formData.category);
+      if (selectedImage) {
+        formDataToSend.append('image', selectedImage);
+      }
+
+      await api.post('/admin/announcements', formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       setModalOpen(false);
-      setFormData({ title: '', content: '' });
+      setFormData({ title: '', content: '', category: 'GENERAL' });
+      setSelectedImage(null);
+      setImagePreview(null);
       fetchAnnouncements();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to create announcement');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -80,7 +124,20 @@ export default function AnnouncementsPage() {
       header: 'Announcement',
       render: (item: Announcement) => (
         <div>
-          <div className="font-medium">{item.title}</div>
+          <div className="flex items-center gap-2">
+            <div className="font-medium">{item.title}</div>
+            <span className={`px-2 py-0.5 text-xs rounded-full ${
+              item.category === 'BANK_UPDATES' 
+                ? 'bg-blue-100 text-blue-700' 
+                : item.category === 'SALES_REPORT'
+                ? 'bg-green-100 text-green-700'
+                : 'bg-gray-100 text-gray-700'
+            }`}>
+              {item.category === 'BANK_UPDATES' ? 'Bank Updates' : 
+               item.category === 'SALES_REPORT' ? 'Sales Report' : 
+               'General'}
+            </span>
+          </div>
           <div className="text-sm text-gray-500 line-clamp-1">{item.content}</div>
         </div>
       ),
@@ -177,8 +234,43 @@ export default function AnnouncementsPage() {
               required
             />
           </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Category
+            </label>
+            <select
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value as 'GENERAL' | 'BANK_UPDATES' | 'SALES_REPORT' })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition"
+            >
+              <option value="GENERAL">General Announcement</option>
+              <option value="BANK_UPDATES">Bank Updates</option>
+              <option value="SALES_REPORT">Sales Report</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Image (Optional)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition"
+            />
+            {imagePreview && (
+              <div className="mt-2">
+                <img src={imagePreview} alt="Preview" className="max-w-full h-48 object-cover rounded-lg border border-gray-300" />
+              </div>
+            )}
+          </div>
           <div className="flex gap-2 justify-end pt-4">
-            <Button variant="secondary" type="button" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" type="button" onClick={() => {
+              setModalOpen(false);
+              setFormData({ title: '', content: '', category: 'GENERAL' });
+              setSelectedImage(null);
+              setImagePreview(null);
+            }}>
               Cancel
             </Button>
             <Button type="submit" loading={submitting}>

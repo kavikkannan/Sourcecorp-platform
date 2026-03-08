@@ -9,7 +9,8 @@ INSERT INTO auth_schema.permissions (name, description) VALUES
   ('crm.case.assign', 'Assign cases to users'),
   ('crm.case.update_status', 'Update case status'),
   ('crm.case.upload_document', 'Upload documents to cases'),
-  ('crm.case.add_note', 'Add notes to cases')
+  ('crm.case.add_note', 'Add notes to cases'),
+  ('crm.case.delete', 'Delete loan cases')
 ON CONFLICT (name) DO NOTHING;
 
 

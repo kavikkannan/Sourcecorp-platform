@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Users, X, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
@@ -234,6 +234,18 @@ export default function HierarchyPage() {
       <PageHeader
         title="Reporting Hierarchy"
         description="Manage manager-subordinate relationships. Each user can have only one direct manager."
+        action={
+          <Button
+            variant="secondary"
+            icon={<RefreshCw className="w-5 h-5" />}
+            onClick={() => {
+              setLoading(true);
+              fetchData();
+            }}
+          >
+            Refresh
+          </Button>
+        }
       />
 
       {/* Quick Guide */}

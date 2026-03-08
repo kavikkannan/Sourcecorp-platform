@@ -12,6 +12,7 @@ import Modal from '@/components/Modal';
 import { useAuth } from '@/contexts/AuthContext';
 import { financeService, downloadBlob } from '@/lib/finance';
 import { crmService, Case, LOAN_TYPES } from '@/lib/crm';
+import { formatIndianCurrency } from '@/utils/formatNumber';
 
 export default function EligibilityPage() {
   const { hasPermission } = useAuth();
@@ -19,6 +20,9 @@ export default function EligibilityPage() {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [monthlyIncome, setMonthlyIncome] = useState('');
   const [requestedAmount, setRequestedAmount] = useState('');
+  const [incomeMultiplier, setIncomeMultiplier] = useState('');
+  const [maxFOIR, setMaxFOIR] = useState('');
+  const [companyListed, setCompanyListed] = useState('');
   const [calculation, setCalculation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -45,6 +49,18 @@ export default function EligibilityPage() {
       setCalculation(result);
       setMonthlyIncome(result.monthly_income.toString());
       setRequestedAmount(result.requested_amount.toString());
+      // Set custom values if they exist in rule snapshot
+      if (result.rule_snapshot) {
+        if (result.rule_snapshot.income_multiplier) {
+          setIncomeMultiplier(result.rule_snapshot.income_multiplier.toString());
+        }
+        if (result.rule_snapshot.max_foir) {
+          setMaxFOIR((result.rule_snapshot.max_foir * 100).toString());
+        }
+        if (result.rule_snapshot.company_listed) {
+          setCompanyListed(result.rule_snapshot.company_listed);
+        }
+      }
     } catch (error: any) {
       if (error.response?.status !== 404) {
         console.error('Failed to load eligibility:', error);
@@ -84,11 +100,25 @@ export default function EligibilityPage() {
 
     try {
       setCalculating(true);
-      const result = await financeService.calculateEligibility({
+      const payload: any = {
         case_id: selectedCase.id,
         monthly_income: parseFloat(monthlyIncome),
         requested_amount: parseFloat(requestedAmount),
-      });
+      };
+      
+      if (incomeMultiplier) {
+        payload.income_multiplier = parseFloat(incomeMultiplier);
+      }
+      
+      if (maxFOIR) {
+        payload.max_foir = parseFloat(maxFOIR);
+      }
+      
+      if (companyListed) {
+        payload.company_listed = companyListed;
+      }
+      
+      const result = await financeService.calculateEligibility(payload);
       setCalculation(result);
       await loadCases(); // Refresh cases to show updated info
     } catch (error: any) {
@@ -207,6 +237,9 @@ export default function EligibilityPage() {
                     setCalculation(null);
                     setMonthlyIncome('');
                     setRequestedAmount('');
+                    setIncomeMultiplier('');
+                    setMaxFOIR('');
+                    setCompanyListed('');
                     setSearchTerm('');
                     setShowSearchResults(false);
                   }}
@@ -242,6 +275,38 @@ export default function EligibilityPage() {
                 onChange={(e) => setRequestedAmount(e.target.value)}
                 placeholder="Enter requested loan amount"
                 required
+              />
+              <Input
+                label="Income Multiplier"
+                type="number"
+                value={incomeMultiplier}
+                onChange={(e) => setIncomeMultiplier(e.target.value)}
+                placeholder="Enter income multiplier (e.g., 60)"
+                step="0.1"
+              />
+              <Input
+                label="Max FOIR (%)"
+                type="number"
+                value={maxFOIR}
+                onChange={(e) => setMaxFOIR(e.target.value)}
+                placeholder="Enter max FOIR percentage (e.g., 60)"
+                step="0.1"
+                min="0"
+                max="100"
+              />
+              <Select
+                label="Company Listed"
+                value={companyListed}
+                onChange={(e) => setCompanyListed(e.target.value)}
+                options={[
+                  { value: '', label: 'Select company category' },
+                  { value: 'Super Cat A', label: 'Super Cat A' },
+                  { value: 'Cat A', label: 'Cat A' },
+                  { value: 'Cat B', label: 'Cat B' },
+                  { value: 'Cat C', label: 'Cat C' },
+                  { value: 'Cat D', label: 'Cat D' },
+                  { value: 'Unlisted', label: 'Unlisted' },
+                ]}
               />
             </div>
             <Button onClick={handleCalculate} disabled={calculating} className="w-full md:w-auto">
@@ -309,19 +374,19 @@ export default function EligibilityPage() {
               <div className="bg-white rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 mb-1">Monthly Income</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  ₹{calculation.monthly_income.toLocaleString('en-IN')}
+                  {formatIndianCurrency(calculation.monthly_income)}
                 </p>
               </div>
               <div className="bg-white rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 mb-1">Eligible Amount</p>
                 <p className="text-2xl font-bold text-primary-600">
-                  ₹{calculation.eligible_amount.toLocaleString('en-IN')}
+                  {formatIndianCurrency(calculation.eligible_amount)}
                 </p>
               </div>
               <div className="bg-white rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 mb-1">Requested Amount</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  ₹{calculation.requested_amount.toLocaleString('en-IN')}
+                  {formatIndianCurrency(calculation.requested_amount)}
                 </p>
               </div>
             </div>
@@ -348,6 +413,12 @@ export default function EligibilityPage() {
                       {calculation.rule_snapshot.min_age} - {calculation.rule_snapshot.max_age} years
                     </p>
                   </div>
+                  {calculation.rule_snapshot.company_listed && (
+                    <div>
+                      <p className="text-gray-600">Company Listed</p>
+                      <p className="font-medium">{calculation.rule_snapshot.company_listed}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

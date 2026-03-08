@@ -7,12 +7,14 @@ import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import Input from '@/components/Input';
+import Select from '@/components/Select';
 import { 
   noteService, 
   Note,
   getVisibilityColor,
   getVisibilityLabel,
 } from '@/lib/notes';
+import { crmService, Case } from '@/lib/crm';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
@@ -26,6 +28,8 @@ export default function NotesPage() {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [activeTab, setActiveTab] = useState<'personal' | 'all'>('personal');
   const [submitting, setSubmitting] = useState(false);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loadingCases, setLoadingCases] = useState(false);
 
   const [formData, setFormData] = useState({
     content: '',
@@ -62,6 +66,27 @@ export default function NotesPage() {
   useEffect(() => {
     fetchNotes();
   }, [fetchNotes]);
+
+  const fetchCases = useCallback(async () => {
+    try {
+      setLoadingCases(true);
+      const response = await crmService.getCases({ 
+        view_type: 'individual',
+        limit: 1000 // Fetch all cases for dropdown
+      });
+      setCases(response.cases);
+    } catch (error) {
+      console.error('Failed to fetch cases:', error);
+    } finally {
+      setLoadingCases(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (createModalOpen) {
+      fetchCases();
+    }
+  }, [createModalOpen, fetchCases]);
 
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,12 +252,19 @@ export default function NotesPage() {
           </div>
 
           {formData.visibility === 'CASE' && (
-            <Input
-              label="Case ID"
+            <Select
+              label="Select Case"
               value={formData.linkedCaseId}
               onChange={(e) => setFormData({ ...formData, linkedCaseId: e.target.value })}
-              placeholder="Enter case ID"
               required={formData.visibility === 'CASE'}
+              disabled={loadingCases}
+              options={[
+                { value: '', label: loadingCases ? 'Loading cases...' : 'Select a case' },
+                ...cases.map(caseItem => ({
+                  value: caseItem.id,
+                  label: `${caseItem.case_number} - ${caseItem.customer_name}`
+                }))
+              ]}
             />
           )}
 

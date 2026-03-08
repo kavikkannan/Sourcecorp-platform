@@ -554,5 +554,78 @@ export class ChatController {
       throw error;
     }
   }
+
+  // ============================================
+  // DELETE & RENAME OPERATIONS
+  // ============================================
+
+  static async deleteChannel(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      
+      await ChatService.deleteChannel(
+        id,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.json({ message: 'Channel deleted successfully' });
+    } catch (error: any) {
+      res.status(error.status || 500).json({ 
+        error: error.message || 'Failed to delete channel' 
+      });
+    }
+  }
+
+  static async deleteMessage(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      
+      await ChatService.deleteMessage(
+        id,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.json({ message: 'Message deleted successfully' });
+    } catch (error: any) {
+      res.status(error.status || 500).json({ 
+        error: error.message || 'Failed to delete message' 
+      });
+    }
+  }
+
+  static async renameChannel(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { name } = req.body;
+
+      if (!name || typeof name !== 'string') {
+        return res.status(400).json({ error: 'Channel name is required' });
+      }
+
+      const channel = await ChatService.renameChannel(
+        id,
+        name,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.json(channel);
+    } catch (error: any) {
+      res.status(error.status || 500).json({ 
+        error: error.message || 'Failed to rename channel' 
+      });
+    }
+  }
 }
 

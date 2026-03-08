@@ -237,5 +237,18 @@ export const chatService = {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
     return `${apiUrl}/chat/files/${fileId}`;
   },
+
+  // Delete operations
+  async deleteMessage(messageId: string): Promise<void> {
+    await api.delete(`/chat/messages/${messageId}`);
+  },
+
+  // Rename operation
+  async renameChannel(channelId: string, newName: string): Promise<Channel> {
+    const response = await api.patch(`/chat/channels/${channelId}/rename`, {
+      name: newName,
+    });
+    return response.data;
+  },
 };
 

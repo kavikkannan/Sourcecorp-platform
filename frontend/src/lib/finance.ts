@@ -96,6 +96,9 @@ export interface CalculateEligibilityData {
   case_id: string;
   monthly_income: number;
   requested_amount: number;
+  income_multiplier?: number;
+  max_foir?: number;
+  company_listed?: string;
 }
 
 export interface CreateObligationSheetData {

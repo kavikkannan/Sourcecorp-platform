@@ -119,25 +119,30 @@ export class HierarchyService {
    */
   static async getHierarchyTree(): Promise<HierarchyTree> {
     try {
-      // Get all hierarchy relationships
+      // Get all hierarchy relationships (only include relationships where subordinate is active)
+      // Manager can be inactive, but we'll handle that by making the subordinate a root
       const hierarchyResult = await query(
       `SELECT uh.manager_id, uh.subordinate_id, uh.created_at,
               u1.email as manager_email, u1.first_name as manager_first_name, u1.last_name as manager_last_name,
-              u2.email as subordinate_email, u2.first_name as subordinate_first_name, u2.last_name as subordinate_last_name
+              u2.email as subordinate_email, u2.first_name as subordinate_first_name, u2.last_name as subordinate_last_name,
+              u1.is_active as manager_is_active
        FROM auth_schema.user_hierarchy uh
        JOIN auth_schema.users u1 ON uh.manager_id = u1.id
        JOIN auth_schema.users u2 ON uh.subordinate_id = u2.id
-       WHERE u1.is_active = true AND u2.is_active = true`
+       WHERE u2.is_active = true`
     );
 
-      // Get all users without managers (potential roots)
+      // Get all users without managers OR with inactive managers (potential roots)
       const rootUsersResult = await query(
         `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.created_at, u.updated_at
          FROM auth_schema.users u
          WHERE u.is_active = true
-         AND NOT EXISTS (
-           SELECT 1 FROM auth_schema.user_hierarchy uh
-           WHERE uh.subordinate_id = u.id
+         AND (
+           NOT EXISTS (
+             SELECT 1 FROM auth_schema.user_hierarchy uh
+             JOIN auth_schema.users m ON uh.manager_id = m.id
+             WHERE uh.subordinate_id = u.id AND m.is_active = true
+           )
          )
          ORDER BY u.first_name, u.last_name`
       );
@@ -162,11 +167,14 @@ export class HierarchyService {
       });
 
       // Build the tree structure
+      // Only create relationships if both manager and subordinate are active
       relationships.forEach((rel: any) => {
         const managerNode = userMap.get(rel.manager_id);
         const subordinateNode = userMap.get(rel.subordinate_id);
 
-        if (managerNode && subordinateNode) {
+        // Only create relationship if manager is active
+        // If manager is inactive, the subordinate will appear as a root node
+        if (managerNode && subordinateNode && rel.manager_is_active === true) {
           subordinateNode.manager = managerNode;
           managerNode.subordinates.push(subordinateNode);
         }
@@ -210,10 +218,27 @@ export class HierarchyService {
         }
       });
 
-      // Get root nodes
-      const rootNodes: HierarchyNode[] = rootUsersResult.rows
-        .map((user: User) => userMap.get(user.id)!)
-        .filter(Boolean);
+      // Get root nodes - users without active managers
+      // This includes:
+      // 1. Users with no manager at all
+      // 2. Users whose manager is inactive (they become root nodes)
+      const rootNodes: HierarchyNode[] = [];
+      
+      // Add all users that don't have an active manager
+      userMap.forEach((node) => {
+        // If user has no manager, or manager is inactive, they're a root
+        if (!node.manager) {
+          rootNodes.push(node);
+        }
+      });
+      
+      // Also ensure all users from rootUsersResult are included
+      rootUsersResult.rows.forEach((user: User) => {
+        const node = userMap.get(user.id);
+        if (node && !rootNodes.includes(node)) {
+          rootNodes.push(node);
+        }
+      });
 
       // Find max depth
       let maxDepth = 0;

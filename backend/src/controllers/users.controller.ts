@@ -12,10 +12,10 @@ export class UsersController {
       const passwordHash = await hashPassword(password);
 
       const result = await query(
-        `INSERT INTO auth_schema.users (email, password_hash, first_name, last_name)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO auth_schema.users (email, password_hash, first_name, last_name, is_active)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id, email, first_name, last_name, is_active, created_at`,
-        [email, passwordHash, firstName, lastName]
+        [email, passwordHash, firstName, lastName, true]
       );
 
       const user = result.rows[0];
@@ -113,7 +113,7 @@ export class UsersController {
   static async updateUser(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const { email, firstName, lastName, isActive } = req.body;
+      const { email, password, firstName, lastName, isActive } = req.body;
 
       const updates: string[] = [];
       const values: any[] = [];
@@ -122,6 +122,12 @@ export class UsersController {
       if (email !== undefined) {
         updates.push(`email = $${paramIndex++}`);
         values.push(email);
+      }
+      if (password !== undefined && password.trim() !== '') {
+        // Hash the password before updating
+        const passwordHash = await hashPassword(password);
+        updates.push(`password_hash = $${paramIndex++}`);
+        values.push(passwordHash);
       }
       if (firstName !== undefined) {
         updates.push(`first_name = $${paramIndex++}`);
@@ -157,12 +163,18 @@ export class UsersController {
 
       const user = result.rows[0];
 
+      // Prepare audit details (don't log password)
+      const auditDetails: any = { email, firstName, lastName, isActive };
+      if (password !== undefined && password.trim() !== '') {
+        auditDetails.passwordChanged = true;
+      }
+
       await AuditService.createLog({
         userId: req.user?.userId,
         action: 'admin.users.update',
         resourceType: 'user',
         resourceId: id,
-        details: { email, firstName, lastName, isActive },
+        details: auditDetails,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
@@ -229,6 +241,44 @@ export class UsersController {
       });
 
       res.json({ message: 'Role removed successfully' });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async deleteUser(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      // Get user details before deletion for audit log
+      const userResult = await query(
+        `SELECT id, email, first_name, last_name FROM auth_schema.users WHERE id = $1`,
+        [id]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const user = userResult.rows[0];
+
+      // Delete user (cascade will handle related records)
+      await query(
+        `DELETE FROM auth_schema.users WHERE id = $1`,
+        [id]
+      );
+
+      await AuditService.createLog({
+        userId: req.user?.userId,
+        action: 'admin.users.delete',
+        resourceType: 'user',
+        resourceId: id,
+        details: { email: user.email, firstName: user.first_name, lastName: user.last_name },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json({ message: 'User deleted successfully' });
     } catch (error) {
       throw error;
     }

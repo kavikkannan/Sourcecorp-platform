@@ -82,6 +82,9 @@ export class FinanceService {
     monthly_income: number;
     requested_amount: number;
     calculated_by: string;
+    income_multiplier?: number;
+    max_foir?: number;
+    company_listed?: string;
   }, auditData: { ipAddress?: string; userAgent?: string }): Promise<EligibilityCalculation> {
     // Get case to determine loan type
     const caseResult = await query(
@@ -111,21 +114,30 @@ export class FinanceService {
       });
     }
 
+    // Use custom values if provided, otherwise use rule values
+    const incomeMultiplier = data.income_multiplier ?? rule.income_multiplier;
+    const maxFOIR = data.max_foir !== undefined ? data.max_foir / 100 : rule.max_foir; // Convert percentage to decimal
+
     // Calculate eligible amount: monthly_income * income_multiplier
-    const eligibleAmount = data.monthly_income * rule.income_multiplier;
+    const eligibleAmount = data.monthly_income * incomeMultiplier;
 
     // Check if requested amount is within eligible amount
     const result = data.requested_amount <= eligibleAmount ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
 
-    // Store rule snapshot
-    const ruleSnapshot = {
+    // Store rule snapshot (include custom values if provided)
+    const ruleSnapshot: any = {
       loan_type: rule.loan_type,
       min_age: rule.min_age,
       max_age: rule.max_age,
-      max_foir: rule.max_foir,
-      income_multiplier: rule.income_multiplier,
+      max_foir: maxFOIR,
+      income_multiplier: incomeMultiplier,
       rule_id: rule.id,
     };
+    
+    // Add company_listed if provided
+    if (data.company_listed) {
+      ruleSnapshot.company_listed = data.company_listed;
+    }
 
     // Save calculation
     const calcResult = await query(

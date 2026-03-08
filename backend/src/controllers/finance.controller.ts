@@ -12,7 +12,7 @@ export class FinanceController {
 
   static async calculateEligibility(req: AuthRequest, res: Response) {
     try {
-      const { case_id, monthly_income, requested_amount } = req.body;
+      const { case_id, monthly_income, requested_amount, income_multiplier, max_foir, company_listed } = req.body;
 
       const calculation = await FinanceService.calculateEligibility(
         {
@@ -20,6 +20,9 @@ export class FinanceController {
           monthly_income,
           requested_amount,
           calculated_by: req.user!.userId,
+          income_multiplier,
+          max_foir,
+          company_listed,
         },
         {
           ipAddress: req.ip,

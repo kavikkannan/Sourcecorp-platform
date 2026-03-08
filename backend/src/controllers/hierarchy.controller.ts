@@ -146,5 +146,22 @@ export class HierarchyController {
       throw error;
     }
   }
+
+  /**
+   * GET /api/users/me/subordinates/all
+   * User level: Get all subordinates recursively (direct and indirect)
+   */
+  static async getAllMySubordinates(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user?.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const allSubordinates = await HierarchyService.getAllSubordinates(req.user.userId);
+      res.json(allSubordinates);
+    } catch (error) {
+      throw error;
+    }
+  }
 }
 

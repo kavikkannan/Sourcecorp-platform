@@ -88,6 +88,14 @@ router.get(
   ChatController.getChannel
 );
 
+// Rename channel
+router.patch(
+  '/channels/:id/rename',
+  requirePermission('chat.channel.rename'),
+  validate(validators.renameChannelSchema),
+  ChatController.renameChannel
+);
+
 // Get users for DM
 router.get(
   '/users',
@@ -112,6 +120,13 @@ router.get(
   '/messages/:channelId',
   requirePermission('chat.message.send'),
   ChatController.getMessages
+);
+
+// Delete message
+router.delete(
+  '/messages/:id',
+  requirePermission('chat.delete'),
+  ChatController.deleteMessage
 );
 
 // ============================================

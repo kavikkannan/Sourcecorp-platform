@@ -111,6 +111,22 @@ CREATE TABLE IF NOT EXISTS audit_schema.audit_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Error logs table
+CREATE TABLE IF NOT EXISTS audit_schema.error_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth_schema.users(id),
+    error_message TEXT NOT NULL,
+    error_stack TEXT,
+    error_code VARCHAR(50),
+    path VARCHAR(500),
+    method VARCHAR(10),
+    request_body JSONB,
+    request_query JSONB,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON auth_schema.users(email);
 CREATE INDEX IF NOT EXISTS idx_users_active ON auth_schema.users(is_active);
@@ -124,6 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_announcements_active ON admin_schema.announcement
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_schema.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_schema.audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_schema.audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_error_logs_user_id ON audit_schema.error_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON audit_schema.error_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_error_logs_path ON audit_schema.error_logs(path);
 
 -- ============================================
 -- CRM SCHEMA (PHASE 2)
@@ -197,15 +216,61 @@ CREATE INDEX IF NOT EXISTS idx_case_status_history_changed_at ON crm_schema.case
 CREATE INDEX IF NOT EXISTS idx_documents_case_id ON crm_schema.documents(case_id);
 CREATE INDEX IF NOT EXISTS idx_case_notes_case_id ON crm_schema.case_notes(case_id);
 
+-- Customer detail sheets table
+CREATE TABLE IF NOT EXISTS crm_schema.customer_detail_sheets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    case_id UUID NOT NULL REFERENCES crm_schema.cases(id) ON DELETE CASCADE,
+    detail_data JSONB NOT NULL, -- Stores all extracted data from Excel
+    uploaded_by UUID NOT NULL REFERENCES auth_schema.users(id),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Customer detail sheet template configuration (admin settings)
+CREATE TABLE IF NOT EXISTS crm_schema.customer_detail_template (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    field_key VARCHAR(255) UNIQUE NOT NULL,
+    field_label VARCHAR(255) NOT NULL,
+    is_visible BOOLEAN DEFAULT true, -- Whether to show in popup
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_customer_detail_sheets_case_id ON crm_schema.customer_detail_sheets(case_id);
+CREATE INDEX IF NOT EXISTS idx_customer_detail_template_field_key ON crm_schema.customer_detail_template(field_key);
+
 -- Function to generate unique case numbers
-CREATE OR REPLACE FUNCTION crm_schema.generate_case_number()
+CREATE OR REPLACE FUNCTION crm_schema.generate_case_number(loan_type_val VARCHAR, user_id_val UUID)
 RETURNS TEXT AS $$
 DECLARE
     new_number TEXT;
     counter INTEGER;
+    prefix TEXT;
+    user_id_short TEXT;
 BEGIN
-    SELECT COUNT(*) INTO counter FROM crm_schema.cases;
-    new_number := 'CASE-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' || LPAD((counter + 1)::TEXT, 5, '0');
+    -- Map loan type to prefix
+    CASE loan_type_val
+        WHEN 'PERSONAL' THEN prefix := 'PL';
+        WHEN 'BUSINESS' THEN prefix := 'BL';
+        WHEN 'EDUCATION' THEN prefix := 'EL';
+        WHEN 'HOME' THEN prefix := 'HL';
+        WHEN 'AUTO' THEN prefix := 'AL';
+        ELSE prefix := 'CASE';
+    END CASE;
+
+    -- Get short user ID (first 8 characters)
+    user_id_short := SUBSTRING(user_id_val::TEXT, 1, 8);
+
+    -- Count cases with same prefix and date
+    SELECT COUNT(*) INTO counter 
+    FROM crm_schema.cases 
+    WHERE case_number LIKE prefix || '-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' || user_id_short || '-%';
+
+    -- Generate new case number: PREFIX-YYYYMMDD-USERID-XXXXX
+    new_number := prefix || '-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' || user_id_short || '-' || LPAD((counter + 1)::TEXT, 5, '0');
+    
     RETURN new_number;
 END;
 $$ LANGUAGE plpgsql;
@@ -215,7 +280,7 @@ CREATE OR REPLACE FUNCTION crm_schema.set_case_number()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.case_number IS NULL OR NEW.case_number = '' THEN
-        NEW.case_number := crm_schema.generate_case_number();
+        NEW.case_number := crm_schema.generate_case_number(NEW.loan_type, NEW.created_by);
     END IF;
     RETURN NEW;
 END;
@@ -267,26 +332,6 @@ CREATE TABLE IF NOT EXISTS finance_schema.eligibility_calculations (
     rule_snapshot JSONB NOT NULL,
     calculated_by UUID NOT NULL REFERENCES auth_schema.users(id),
     calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Obligation sheets table
-CREATE TABLE IF NOT EXISTS finance_schema.obligation_sheets (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    case_id UUID NOT NULL REFERENCES crm_schema.cases(id) ON DELETE CASCADE,
-    total_obligation DECIMAL(15, 2) NOT NULL,
-    net_income DECIMAL(15, 2) NOT NULL,
-    created_by UUID NOT NULL REFERENCES auth_schema.users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Obligation items table
-CREATE TABLE IF NOT EXISTS finance_schema.obligation_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    obligation_sheet_id UUID NOT NULL REFERENCES finance_schema.obligation_sheets(id) ON DELETE CASCADE,
-    description VARCHAR(255) NOT NULL,
-    monthly_emi DECIMAL(15, 2) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CAM templates table (admin-defined templates based on real bank formats)

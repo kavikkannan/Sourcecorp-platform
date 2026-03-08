@@ -4,6 +4,7 @@ import { CRMService } from '../services/crm.service';
 import { query } from '../db/pool';
 import fs from 'fs/promises';
 import path from 'path';
+import { AuditService } from '../services/audit.service';
 
 export class CRMController {
   
@@ -94,7 +95,7 @@ export class CRMController {
 
   static async getCases(req: AuthRequest, res: Response) {
     try {
-      const { status, limit = '20', offset = '0' } = req.query;
+      const { status, view_type, created_by, limit = '20', offset = '0', month } = req.query;
 
       // Get user's role to apply RBAC
       const userResult = await query(
@@ -121,8 +122,11 @@ export class CRMController {
         userRole,
         userTeams,
         status: status as string | undefined,
+        view_type: view_type as 'individual' | 'team' | undefined,
+        created_by: created_by as string | undefined,
         limit: parseInt(limit as string, 10),
         offset: parseInt(offset as string, 10),
+        month: month as string | undefined,
       });
 
       res.json({
@@ -255,6 +259,28 @@ export class CRMController {
         assigned_at: assignment.assigned_at,
       });
     } catch (error) {
+      throw error;
+    }
+  }
+
+  static async deleteCase(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      await CRMService.deleteCase(
+        id,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.status(200).json({ message: 'Case deleted successfully' });
+    } catch (error: any) {
+      if (error.message === 'Case not found') {
+        return res.status(404).json({ error: 'Case not found' });
+      }
       throw error;
     }
   }
@@ -416,11 +442,43 @@ export class CRMController {
       const { id } = req.params;
       const { note } = req.body;
 
+      let documentId: string | null = null;
+
+      // Handle file upload if present
+      if (req.file) {
+        const uploadDir = path.join(process.cwd(), 'uploads', 'documents');
+        await fs.mkdir(uploadDir, { recursive: true });
+
+        const timestamp = Date.now();
+        const filename = `${timestamp}-${req.file.originalname}`;
+        const filepath = path.join(uploadDir, filename);
+
+        await fs.writeFile(filepath, req.file.buffer);
+
+        const document = await CRMService.addDocument(
+          {
+            case_id: id,
+            file_name: req.file.originalname,
+            file_path: filepath,
+            mime_type: req.file.mimetype,
+            file_size: req.file.size,
+            uploaded_by: req.user!.userId,
+          },
+          {
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          }
+        );
+
+        documentId = document.id;
+      }
+
       const newNote = await CRMService.addNote(
         {
           case_id: id,
           note,
           created_by: req.user!.userId,
+          document_id: documentId,
         },
         {
           ipAddress: req.ip,
@@ -432,6 +490,12 @@ export class CRMController {
         id: newNote.id,
         note: newNote.note,
         created_at: newNote.created_at,
+        document: newNote.document_id ? {
+          id: newNote.document_id,
+          file_name: newNote.document_file_name,
+          mime_type: newNote.document_mime_type,
+          file_size: newNote.document_file_size,
+        } : null,
       });
     } catch (error) {
       throw error;
@@ -453,6 +517,12 @@ export class CRMController {
             email: n.creator_email,
             name: `${n.creator_first_name} ${n.creator_last_name}`,
           } : undefined,
+          document: n.document_id ? {
+            id: n.document_id,
+            file_name: n.document_file_name,
+            mime_type: n.document_mime_type,
+            file_size: n.document_file_size,
+          } : null,
         })),
       });
     } catch (error) {
@@ -529,6 +599,37 @@ export class CRMController {
         return res.status(400).json({ error: 'scheduled_for and scheduled_at are required' });
       }
 
+      let documentId: string | null = null;
+
+      // Handle file upload if present
+      if (req.file) {
+        const uploadDir = path.join(process.cwd(), 'uploads', 'documents');
+        await fs.mkdir(uploadDir, { recursive: true });
+
+        const timestamp = Date.now();
+        const filename = `${timestamp}-${req.file.originalname}`;
+        const filepath = path.join(uploadDir, filename);
+
+        await fs.writeFile(filepath, req.file.buffer);
+
+        const document = await CRMService.addDocument(
+          {
+            case_id: id,
+            file_name: req.file.originalname,
+            file_path: filepath,
+            mime_type: req.file.mimetype,
+            file_size: req.file.size,
+            uploaded_by: req.user!.userId,
+          },
+          {
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          }
+        );
+
+        documentId = document.id;
+      }
+
       const notification = await CRMService.scheduleNotification(
         {
           case_id: id,
@@ -536,6 +637,7 @@ export class CRMController {
           scheduled_by: req.user!.userId,
           message,
           scheduled_at: new Date(scheduled_at),
+          document_id: documentId,
         },
         {
           ipAddress: req.ip,
@@ -550,6 +652,12 @@ export class CRMController {
         scheduled_at: notification.scheduled_at,
         message: notification.message,
         status: notification.status,
+        document: notification.document_id ? {
+          id: notification.document_id,
+          file_name: notification.document_file_name,
+          mime_type: notification.document_mime_type,
+          file_size: notification.document_file_size,
+        } : null,
       });
     } catch (error: any) {
       if (error.message?.includes('Cannot schedule notification')) {
@@ -573,11 +681,13 @@ export class CRMController {
 
   static async getUserNotifications(req: AuthRequest, res: Response) {
     try {
-      const { is_read, completion_status, limit = '50', offset = '0' } = req.query;
+      const { is_read, completion_status, due_date_from, due_date_to, limit = '50', offset = '0' } = req.query;
 
       const result = await CRMService.getUserNotifications(req.user!.userId, {
         is_read: is_read === 'true' ? true : is_read === 'false' ? false : undefined,
         completion_status: completion_status as 'ONGOING' | 'COMPLETED' | undefined,
+        due_date_from: due_date_from as string | undefined,
+        due_date_to: due_date_to as string | undefined,
         limit: parseInt(limit as string, 10),
         offset: parseInt(offset as string, 10),
       });
@@ -644,6 +754,255 @@ export class CRMController {
         return res.status(404).json({ error: error.message });
       }
       throw error;
+    }
+  }
+
+  // ============================================
+  // CUSTOMER DETAIL SHEETS
+  // ============================================
+
+  static async uploadCustomerDetailSheet(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({ error: 'Excel file is required' });
+      }
+
+      if (!file.mimetype.includes('spreadsheet') && !file.originalname.match(/\.(xlsx|xls)$/i)) {
+        return res.status(400).json({ error: 'File must be an Excel file (.xlsx or .xls)' });
+      }
+
+      const detailSheet = await CRMService.uploadCustomerDetailSheet(
+        id,
+        file.buffer,
+        req.user!.userId
+      );
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'crm.customer_detail_sheet.upload',
+        resourceType: 'customer_detail_sheet',
+        resourceId: detailSheet.id,
+        details: {
+          case_id: id,
+          file_name: file.originalname,
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(201).json(detailSheet);
+    } catch (error: any) {
+      if (error.message === 'Case not found') {
+        return res.status(404).json({ error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  static async getCustomerDetailSheet(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const detailSheet = await CRMService.getCustomerDetailSheet(id);
+
+      if (!detailSheet) {
+        return res.status(404).json({ error: 'Customer detail sheet not found' });
+      }
+
+      res.json(detailSheet);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async getCustomerDetailTemplate(req: AuthRequest, res: Response) {
+    try {
+      const template = await CRMService.getCustomerDetailTemplate();
+      res.json(template);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async updateCustomerDetailTemplate(req: AuthRequest, res: Response) {
+    try {
+      const { fields } = req.body;
+
+      if (!Array.isArray(fields)) {
+        return res.status(400).json({ error: 'Fields must be an array' });
+      }
+
+      await CRMService.updateCustomerDetailTemplate(fields);
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'admin.customer_detail_template.update',
+        resourceType: 'customer_detail_template',
+        resourceId: 'template',
+        details: { fields_count: fields.length },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json({ message: 'Template updated successfully' });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // ============================================
+  // CUSTOMER DETAIL CHANGE REQUESTS
+  // ============================================
+
+  /**
+   * POST /api/crm/cases/:id/customer-detail-change-request
+   * Create a change request for customer details
+   */
+  static async createCustomerDetailChangeRequest(req: AuthRequest, res: Response) {
+    try {
+      const { id: caseId } = req.params;
+      const { requested_for, requested_changes } = req.body;
+
+      if (!requested_for || !requested_changes) {
+        return res.status(400).json({ error: 'requested_for and requested_changes are required' });
+      }
+
+      const changeRequest = await CRMService.createCustomerDetailChangeRequest({
+        caseId,
+        requestedBy: req.user!.userId,
+        requestedFor: requested_for,
+        requestedChanges: requested_changes,
+      });
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'crm.customer_detail_change_request.create',
+        resourceType: 'customer_detail_change_request',
+        resourceId: changeRequest.id,
+        details: { case_id: caseId, requested_for },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(201).json(changeRequest);
+    } catch (error: any) {
+      console.error('Error in createCustomerDetailChangeRequest:', error);
+      return res.status(500).json({ error: error.message || 'Failed to create change request' });
+    }
+  }
+
+  /**
+   * GET /api/crm/cases/:id/customer-detail-change-requests
+   * Get all change requests for a case
+   */
+  static async getCustomerDetailChangeRequests(req: AuthRequest, res: Response) {
+    try {
+      const { id: caseId } = req.params;
+      const changeRequests = await CRMService.getCustomerDetailChangeRequests(caseId);
+      res.json({ change_requests: changeRequests });
+    } catch (error: any) {
+      console.error('Error in getCustomerDetailChangeRequests:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get change requests' });
+    }
+  }
+
+  /**
+   * GET /api/crm/customer-detail-change-requests/pending
+   * Get pending change requests for the current user
+   */
+  static async getPendingChangeRequests(req: AuthRequest, res: Response) {
+    try {
+      const changeRequests = await CRMService.getPendingChangeRequestsForUser(req.user!.userId);
+      res.json({ change_requests: changeRequests });
+    } catch (error: any) {
+      console.error('Error in getPendingChangeRequests:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get pending change requests' });
+    }
+  }
+
+  /**
+   * GET /api/crm/customer-detail-change-requests/approvers
+   * Get users with modify permission (above in hierarchy)
+   */
+  static async getUsersWithModifyPermission(req: AuthRequest, res: Response) {
+    try {
+      const users = await CRMService.getUsersWithModifyPermission(req.user!.userId);
+      res.json({ users });
+    } catch (error: any) {
+      console.error('Error in getUsersWithModifyPermission:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get users with modify permission' });
+    }
+  }
+
+  /**
+   * POST /api/crm/customer-detail-change-requests/:id/approve
+   * Approve a change request
+   */
+  static async approveCustomerDetailChangeRequest(req: AuthRequest, res: Response) {
+    try {
+      const { id: requestId } = req.params;
+      const { remarks } = req.body;
+
+      const changeRequest = await CRMService.approveCustomerDetailChangeRequest(
+        requestId,
+        req.user!.userId,
+        remarks
+      );
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'crm.customer_detail_change_request.approve',
+        resourceType: 'customer_detail_change_request',
+        resourceId: requestId,
+        details: { case_id: changeRequest.case_id },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json({ message: 'Change request approved successfully', change_request: changeRequest });
+    } catch (error: any) {
+      console.error('Error in approveCustomerDetailChangeRequest:', error);
+      return res.status(500).json({ error: error.message || 'Failed to approve change request' });
+    }
+  }
+
+  /**
+   * POST /api/crm/customer-detail-change-requests/:id/reject
+   * Reject a change request
+   */
+  static async rejectCustomerDetailChangeRequest(req: AuthRequest, res: Response) {
+    try {
+      const { id: requestId } = req.params;
+      const { remarks } = req.body;
+
+      const changeRequest = await CRMService.rejectCustomerDetailChangeRequest(
+        requestId,
+        req.user!.userId,
+        remarks
+      );
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'crm.customer_detail_change_request.reject',
+        resourceType: 'customer_detail_change_request',
+        resourceId: requestId,
+        details: { case_id: changeRequest.case_id },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json({ message: 'Change request rejected', change_request: changeRequest });
+    } catch (error: any) {
+      console.error('Error in rejectCustomerDetailChangeRequest:', error);
+      return res.status(500).json({ error: error.message || 'Failed to reject change request' });
     }
   }
 }

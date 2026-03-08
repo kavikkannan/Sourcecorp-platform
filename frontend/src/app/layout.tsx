@@ -3,8 +3,8 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'SourceCorp Platform',
-  description: 'Internal platform for SourceCorp',
+  title: 'Sourcecorp Solution Platform',
+  description: 'Internal platform for Sourcecorp Solution',
 };
 
 export default function RootLayout({

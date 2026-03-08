@@ -39,6 +39,25 @@ export class ChatService {
   }
 
   /**
+   * Safely parse requested_members JSON string
+   */
+  private static parseRequestedMembers(membersStr: any): string[] {
+    try {
+      if (!membersStr) return [];
+      if (Array.isArray(membersStr)) return membersStr;
+      if (typeof membersStr === 'string') {
+        const trimmed = membersStr.trim();
+        if (trimmed === '' || trimmed === 'null') return [];
+        return JSON.parse(trimmed);
+      }
+      return [];
+    } catch (error) {
+      console.error('Error parsing requested_members:', error, 'Value:', membersStr);
+      return [];
+    }
+  }
+
+  /**
    * Check if user can create channel type based on hierarchy
    */
   static async canCreateChannelType(
@@ -677,7 +696,7 @@ export class ChatService {
 
     return {
       ...request,
-      requested_members: JSON.parse(request.requested_members || '[]'),
+      requested_members: ChatService.parseRequestedMembers(request.requested_members),
     };
   }
 
@@ -716,7 +735,7 @@ export class ChatService {
         type: request.channel_type,
         created_by: request.requested_by,
         status: 'ACTIVE',
-        requested_members: JSON.parse(request.requested_members || '[]'),
+        requested_members: ChatService.parseRequestedMembers(request.requested_members),
         target_role_id: request.target_role_id,
         target_team_id: request.target_team_id,
       },
@@ -840,40 +859,209 @@ export class ChatService {
 
     const result = await query(queryStr, params);
 
-    return result.rows.map((row) => ({
-      id: row.id,
-      requested_by: row.requested_by,
-      channel_name: row.channel_name,
-      channel_type: row.channel_type,
-      target_role_id: row.target_role_id,
-      target_team_id: row.target_team_id,
-      requested_members: JSON.parse(row.requested_members || '[]'),
-      status: row.status,
-      reviewed_by: row.reviewed_by,
-      review_notes: row.review_notes,
-      created_at: row.created_at,
-      reviewed_at: row.reviewed_at,
-      requester: row.requester_email ? {
-        id: row.requested_by,
-        email: row.requester_email,
-        first_name: row.requester_first_name,
-        last_name: row.requester_last_name,
-      } : undefined,
-      reviewer: row.reviewer_email ? {
-        id: row.reviewed_by,
-        email: row.reviewer_email,
-        first_name: row.reviewer_first_name,
-        last_name: row.reviewer_last_name,
-      } : undefined,
-      target_role: row.target_role_name ? {
-        id: row.target_role_id,
-        name: row.target_role_name,
-      } : undefined,
-      target_team: row.target_team_name ? {
-        id: row.target_team_id,
-        name: row.target_team_name,
-      } : undefined,
-    }));
+    return result.rows.map((row) => {
+      let requestedMembers = [];
+      try {
+        const membersStr = row.requested_members;
+        if (membersStr && typeof membersStr === 'string' && membersStr.trim() !== '') {
+          requestedMembers = JSON.parse(membersStr);
+        } else if (Array.isArray(membersStr)) {
+          requestedMembers = membersStr;
+        }
+      } catch (error) {
+        console.error('Error parsing requested_members:', error, 'Value:', row.requested_members);
+        requestedMembers = [];
+      }
+      
+      return {
+        id: row.id,
+        requested_by: row.requested_by,
+        channel_name: row.channel_name,
+        channel_type: row.channel_type,
+        target_role_id: row.target_role_id,
+        target_team_id: row.target_team_id,
+        requested_members: requestedMembers,
+        status: row.status,
+        reviewed_by: row.reviewed_by,
+        review_notes: row.review_notes,
+        created_at: row.created_at,
+        reviewed_at: row.reviewed_at,
+        requester: row.requester_email ? {
+          id: row.requested_by,
+          email: row.requester_email,
+          first_name: row.requester_first_name,
+          last_name: row.requester_last_name,
+        } : undefined,
+        reviewer: row.reviewer_email ? {
+          id: row.reviewed_by,
+          email: row.reviewer_email,
+          first_name: row.reviewer_first_name,
+          last_name: row.reviewer_last_name,
+        } : undefined,
+        target_role: row.target_role_name ? {
+          id: row.target_role_id,
+          name: row.target_role_name,
+        } : undefined,
+        target_team: row.target_team_name ? {
+          id: row.target_team_id,
+          name: row.target_team_name,
+        } : undefined,
+      };
+    });
+  }
+
+  // ============================================
+  // DELETE & RENAME OPERATIONS
+  // ============================================
+
+  /**
+   * Delete a channel (cascades to messages and attachments)
+   */
+  static async deleteChannel(
+    channelId: string,
+    userId: string,
+    auditData?: { ipAddress?: string; userAgent?: string }
+  ): Promise<void> {
+    // Verify channel exists and user has access
+    const channel = await this.getChannelById(channelId, userId);
+    if (!channel) {
+      throw new Error('Channel not found or access denied');
+    }
+
+    // Delete channel (cascades to messages and attachments via foreign keys)
+    await query(
+      `DELETE FROM chat_schema.channels WHERE id = $1`,
+      [channelId]
+    );
+
+    // Audit log
+    if (auditData) {
+      await AuditService.log({
+        user_id: userId,
+        action: 'DELETE',
+        resource_type: 'CHAT_CHANNEL',
+        resource_id: channelId,
+        details: { channel_name: channel.name, channel_type: channel.type },
+        ip_address: auditData.ipAddress,
+        user_agent: auditData.userAgent,
+      });
+    }
+  }
+
+  /**
+   * Delete a message
+   */
+  static async deleteMessage(
+    messageId: string,
+    userId: string,
+    auditData?: { ipAddress?: string; userAgent?: string }
+  ): Promise<void> {
+    // Verify message exists and user is the sender or has delete permission
+    const result = await query(
+      `SELECT m.id, m.sender_id, m.channel_id, m.content
+       FROM chat_schema.messages m
+       WHERE m.id = $1`,
+      [messageId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Message not found');
+    }
+
+    const message = result.rows[0];
+
+    // Check if user is the sender (users can delete their own messages)
+    // OR if user has chat.delete permission (checked at route level)
+    if (message.sender_id !== userId) {
+      // Permission check is done at route level, but we verify here too
+      const isAdmin = await this.isAdmin(userId);
+      if (!isAdmin) {
+        throw new Error('Only message sender or admin can delete messages');
+      }
+    }
+
+    // Delete message (cascades to attachments via foreign key)
+    await query(
+      `DELETE FROM chat_schema.messages WHERE id = $1`,
+      [messageId]
+    );
+
+    // Audit log
+    if (auditData) {
+      await AuditService.log({
+        user_id: userId,
+        action: 'DELETE',
+        resource_type: 'CHAT_MESSAGE',
+        resource_id: messageId,
+        details: { channel_id: message.channel_id, content_preview: message.content?.substring(0, 50) },
+        ip_address: auditData.ipAddress,
+        user_agent: auditData.userAgent,
+      });
+    }
+  }
+
+  /**
+   * Rename a channel
+   */
+  static async renameChannel(
+    channelId: string,
+    newName: string,
+    userId: string,
+    auditData?: { ipAddress?: string; userAgent?: string }
+  ): Promise<Channel> {
+    // Verify channel exists and user has access
+    const channel = await this.getChannelById(channelId, userId);
+    if (!channel) {
+      throw new Error('Channel not found or access denied');
+    }
+
+    // DM channels cannot be renamed (they don't have names)
+    if (channel.type === 'DM') {
+      throw new Error('DM channels cannot be renamed');
+    }
+
+    // Validate new name
+    if (!newName || newName.trim().length === 0) {
+      throw new Error('Channel name cannot be empty');
+    }
+
+    if (newName.length > 100) {
+      throw new Error('Channel name cannot exceed 100 characters');
+    }
+
+    // Update channel name
+    const result = await query(
+      `UPDATE chat_schema.channels 
+       SET name = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [newName.trim(), channelId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Failed to rename channel');
+    }
+
+    const updatedChannel = await this.getChannelById(channelId, userId);
+
+    // Audit log
+    if (auditData) {
+      await AuditService.log({
+        user_id: userId,
+        action: 'UPDATE',
+        resource_type: 'CHAT_CHANNEL',
+        resource_id: channelId,
+        details: { 
+          old_name: channel.name, 
+          new_name: newName.trim(),
+          channel_type: channel.type 
+        },
+        ip_address: auditData.ipAddress,
+        user_agent: auditData.userAgent,
+      });
+    }
+
+    return updatedChannel!;
   }
 }
 

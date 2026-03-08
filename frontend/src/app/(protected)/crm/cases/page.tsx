@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Plus, Search, Eye, Briefcase, X, Upload } from 'lucide-react';
+import { Plus, Search, Eye, Briefcase, X, Upload, Users, User, Filter, XCircle, FileSpreadsheet, Calendar } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -12,7 +12,10 @@ import Modal from '@/components/Modal';
 import Dropdown from '@/components/Dropdown';
 import { useAuth } from '@/contexts/AuthContext';
 import { crmService, Case, CreateCaseData, LOAN_TYPES, CASE_STATUSES, getStatusColor, getStatusLabel } from '@/lib/crm';
+import { hierarchyService, User as HierarchyUser } from '@/lib/hierarchy';
 import { getErrorMessage } from '@/utils/errorHandler';
+import { formatIndianCurrency } from '@/utils/formatNumber';
+import { format } from 'date-fns';
 
 export default function CasesPage() {
   const router = useRouter();
@@ -23,7 +26,12 @@ export default function CasesPage() {
   const [page, setPage] = useState(0);
   const [limit] = useState(20);
   const [statusFilter, setStatusFilter] = useState('');
+  const [userFilter, setUserFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [monthFilter, setMonthFilter] = useState<string>('');
+  const [viewType, setViewType] = useState<'individual' | 'team'>('individual');
+  const [subordinates, setSubordinates] = useState<HierarchyUser[]>([]);
+  const [loadingSubordinates, setLoadingSubordinates] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -39,12 +47,38 @@ export default function CasesPage() {
   });
   const [loanAmountInput, setLoanAmountInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [showCustomerDetailModal, setShowCustomerDetailModal] = useState(false);
+  const [selectedCaseForDetails, setSelectedCaseForDetails] = useState<Case | null>(null);
+  const [customerDetails, setCustomerDetails] = useState<any>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [templateFields, setTemplateFields] = useState<any[]>([]);
+
+  const loadSubordinates = useCallback(async () => {
+    if (viewType !== 'team') {
+      setSubordinates([]);
+      return;
+    }
+    try {
+      setLoadingSubordinates(true);
+      const allSubs = await hierarchyService.getAllMySubordinates();
+      setSubordinates(allSubs);
+    } catch (error) {
+      console.error('Failed to load subordinates:', error);
+      setSubordinates([]);
+    } finally {
+      setLoadingSubordinates(false);
+    }
+  }, [viewType]);
 
   const loadCases = useCallback(async () => {
     try {
       setLoading(true);
       const response = await crmService.getCases({
         status: statusFilter || undefined,
+        view_type: viewType,
+        created_by: userFilter || undefined,
+        month: monthFilter || undefined,
         limit,
         offset: page * limit,
       });
@@ -63,24 +97,110 @@ export default function CasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, limit]);
+  }, [page, statusFilter, viewType, userFilter, monthFilter, limit]);
+
+  useEffect(() => {
+    loadSubordinates();
+  }, [loadSubordinates]);
 
   useEffect(() => {
     loadCases();
   }, [loadCases]);
 
+  useEffect(() => {
+    // Reset user filter when switching view types
+    setUserFilter('');
+    setPage(0);
+  }, [viewType]);
+
   const handleCreateCase = async () => {
-    // Validate required fields
-    if (!newCase.customer_name.trim() || !newCase.customer_email.trim() || !newCase.customer_phone.trim()) {
-      setCreateError('Please fill in all required fields');
+    // Clear previous errors
+    setCreateError(null);
+    setFieldErrors({});
+
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    
+    // Validate Customer Name
+    if (!newCase.customer_name.trim()) {
+      errors.customer_name = 'Customer name is required';
+    } else if (newCase.customer_name.trim().length < 2) {
+      errors.customer_name = 'Customer name must be at least 2 characters';
+    } else if (newCase.customer_name.trim().length > 100) {
+      errors.customer_name = 'Customer name must be less than 100 characters';
+    }
+
+    // Validate Customer Email
+    if (!newCase.customer_email.trim()) {
+      errors.customer_email = 'Customer email is required';
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newCase.customer_email.trim())) {
+        errors.customer_email = 'Please enter a valid email address';
+      } else if (newCase.customer_email.trim().length > 255) {
+        errors.customer_email = 'Email address is too long';
+      }
+    }
+
+    // Validate Customer Phone
+    if (!newCase.customer_phone.trim()) {
+      errors.customer_phone = 'Customer phone number is required';
+    } else {
+      // Remove spaces, dashes, and parentheses for validation
+      const phoneDigits = newCase.customer_phone.replace(/[\s\-\(\)]/g, '');
+      // Allow 10-15 digits (international format)
+      const phoneRegex = /^[+]?[0-9]{10,15}$/;
+      if (!phoneRegex.test(phoneDigits)) {
+        errors.customer_phone = 'Please enter a valid phone number (10-15 digits)';
+      }
+    }
+
+    // Validate Loan Type
+    if (!newCase.loan_type) {
+      errors.loan_type = 'Loan type is required';
+    }
+
+    // Validate Loan Amount
+    if (!loanAmountInput.trim()) {
+      errors.loan_amount = 'Loan amount is required';
+    } else {
+      const loanAmount = parseFloat(loanAmountInput);
+      if (isNaN(loanAmount)) {
+        errors.loan_amount = 'Loan amount must be a valid number';
+      } else if (loanAmount <= 0) {
+        errors.loan_amount = 'Loan amount must be greater than 0';
+      } else if (loanAmount > 999999999999) {
+        errors.loan_amount = 'Loan amount is too large (maximum: 999,999,999,999)';
+      } else if (loanAmountInput.split('.')[1]?.length > 2) {
+        errors.loan_amount = 'Loan amount can have maximum 2 decimal places';
+      }
+    }
+
+    // Validate file sizes if files are selected
+    if (selectedFiles.length > 0) {
+      const maxFileSize = 10 * 1024 * 1024; // 10MB
+      const oversizedFiles = selectedFiles.filter(file => file.size > maxFileSize);
+      if (oversizedFiles.length > 0) {
+        errors.documents = `Some files exceed 10MB limit: ${oversizedFiles.map(f => f.name).join(', ')}`;
+      }
+    }
+
+    // If there are errors, display them and return
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      // Focus on first error field
+      const firstErrorField = Object.keys(errors)[0];
+      setTimeout(() => {
+        const element = document.querySelector(`[name="${firstErrorField}"]`) as HTMLElement;
+        if (element) {
+          element.focus();
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
       return;
     }
 
     const loanAmount = parseFloat(loanAmountInput);
-    if (!loanAmountInput || isNaN(loanAmount) || loanAmount <= 0) {
-      setCreateError('Loan amount must be a valid number greater than 0');
-      return;
-    }
 
     try {
       setCreating(true);
@@ -103,6 +223,7 @@ export default function CasesPage() {
       setLoanAmountInput('');
       setSelectedFiles([]);
       setCreateError(null);
+      setFieldErrors({});
       loadCases();
     } catch (error: any) {
       console.error('Failed to create case:', error);
@@ -119,6 +240,33 @@ export default function CasesPage() {
     c.customer_email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  useEffect(() => {
+    // Load template fields
+    crmService.getCustomerDetailTemplate().then(setTemplateFields).catch(() => {
+      // If template fails to load, continue without filtering
+      setTemplateFields([]);
+    });
+  }, []);
+
+  const handleViewCustomerDetails = async (caseItem: Case) => {
+    setSelectedCaseForDetails(caseItem);
+    setShowCustomerDetailModal(true);
+    setLoadingDetails(true);
+    try {
+      const details = await crmService.getCustomerDetailSheet(caseItem.id);
+      setCustomerDetails(details);
+    } catch (error: any) {
+      if (error.response?.status !== 404) {
+        console.error('Failed to load customer details:', error);
+        alert('Failed to load customer details');
+      }
+      setCustomerDetails(null);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+
   return (
     <div>
       <PageHeader
@@ -128,18 +276,108 @@ export default function CasesPage() {
 
       <div className="space-y-6">
         {/* Filters and Actions */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full sm:w-auto">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                type="text"
-                placeholder="Search by case number, customer name, or email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+        <div className="space-y-4">
+          {/* Main Filter Bar */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full sm:w-auto">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Input
+                  type="text"
+                  placeholder="Search by case number, customer name, or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              {/* Individual/Team Toggle */}
+              <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => {
+                    setViewType('individual');
+                    setPage(0);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    viewType === 'individual'
+                      ? 'bg-white text-primary-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  Individual
+                </button>
+                <button
+                  onClick={() => {
+                    setViewType('team');
+                    setPage(0);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    viewType === 'team'
+                      ? 'bg-white text-primary-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Team
+                </button>
+              </div>
             </div>
+
+            {hasPermission('crm.case.create') && (
+              <Button onClick={() => setShowCreateModal(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                New Case
+              </Button>
+            )}
+          </div>
+
+          {/* Advanced Filters */}
+          <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <Filter className="w-4 h-4" />
+              Filters:
+            </div>
+            
+            {/* Month Filter - Beautiful Design */}
+            <div className="w-full sm:w-52">
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none z-10" />
+                <select
+                  value={monthFilter}
+                  onChange={(e) => {
+                    setMonthFilter(e.target.value);
+                    setPage(0);
+                  }}
+                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 appearance-none cursor-pointer hover:border-gray-400 transition-colors"
+                >
+                  <option value="">All Months</option>
+                  {(() => {
+                    const options = [];
+                    const now = new Date();
+                    for (let i = 0; i < 12; i++) {
+                      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                      const year = date.getFullYear();
+                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                      const value = `${year}-${month}`;
+                      const label = format(date, 'MMMM yyyy');
+                      options.push({ value, label });
+                    }
+                    return options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ));
+                  })()}
+                </select>
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            
             <div className="w-full sm:w-48">
               <Select
                 label=""
@@ -155,14 +393,91 @@ export default function CasesPage() {
                 ]}
               />
             </div>
-          </div>
 
-          {hasPermission('crm.case.create') && (
-            <Button onClick={() => setShowCreateModal(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Case
-            </Button>
-          )}
+            {/* User Filter - Only show in team view */}
+            {viewType === 'team' && (
+              <div className="w-full sm:w-56">
+                <Select
+                  label=""
+                  value={userFilter}
+                  onChange={(e) => {
+                    setUserFilter(e.target.value);
+                    setPage(0);
+                  }}
+                  className="w-full"
+                  disabled={loadingSubordinates}
+                  options={[
+                    { value: '', label: loadingSubordinates ? 'Loading users...' : 'All Users' },
+                    ...subordinates.map(user => ({
+                      value: user.id,
+                      label: `${user.first_name} ${user.last_name}`
+                    }))
+                  ]}
+                />
+              </div>
+            )}
+
+            {/* Active Filters Display */}
+            {(statusFilter || userFilter || monthFilter) && (
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
+                {monthFilter && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                    <Calendar className="w-3 h-3" />
+                    {format(new Date(monthFilter + '-01'), 'MMMM yyyy')}
+                    <button
+                      onClick={() => {
+                        setMonthFilter('');
+                        setPage(0);
+                      }}
+                      className="hover:text-blue-900 transition-colors"
+                      title="Clear month filter"
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {statusFilter && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm">
+                    Status: {CASE_STATUSES.find(s => s.value === statusFilter)?.label || statusFilter}
+                    <button
+                      onClick={() => {
+                        setStatusFilter('');
+                        setPage(0);
+                      }}
+                      className="hover:text-primary-900"
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {userFilter && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm">
+                    User: {subordinates.find(u => u.id === userFilter) ? `${subordinates.find(u => u.id === userFilter)!.first_name} ${subordinates.find(u => u.id === userFilter)!.last_name}` : 'Unknown'}
+                    <button
+                      onClick={() => {
+                        setUserFilter('');
+                        setPage(0);
+                      }}
+                      className="hover:text-primary-900"
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    setStatusFilter('');
+                    setUserFilter('');
+                    setMonthFilter('');
+                    setPage(0);
+                  }}
+                  className="text-sm text-gray-600 hover:text-gray-900 underline"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Cases Table */}
@@ -251,13 +566,21 @@ export default function CasesPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <span className="text-sm font-semibold text-gray-900">
-                          ${caseItem.loan_amount.toLocaleString()}
+                          {formatIndianCurrency(caseItem.loan_amount)}
                         </span>
                         <div className="text-xs text-gray-500 mt-0.5">
                           {new Date(caseItem.created_at).toLocaleDateString()}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleViewCustomerDetails(caseItem)}
+                            className="p-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                            title="View Customer Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
                         <Dropdown
                           items={[
                             {
@@ -267,6 +590,7 @@ export default function CasesPage() {
                             },
                           ]}
                         />
+                        </div>
                       </td>
                     </motion.tr>
                   ))}
@@ -308,6 +632,7 @@ export default function CasesPage() {
         onClose={() => {
           setShowCreateModal(false);
           setCreateError(null);
+          setFieldErrors({});
           setSelectedFiles([]);
         }}
         title="Create New Case"
@@ -318,48 +643,94 @@ export default function CasesPage() {
               <p className="text-sm text-red-800">{createError}</p>
             </div>
           )}
-          <Input
-            label="Customer Name"
-            value={newCase.customer_name}
-            onChange={(e) => setNewCase({ ...newCase, customer_name: e.target.value })}
-            required
-          />
-          <Input
-            label="Customer Email"
-            type="email"
-            value={newCase.customer_email}
-            onChange={(e) => setNewCase({ ...newCase, customer_email: e.target.value })}
-            required
-          />
-          <Input
-            label="Customer Phone"
-            value={newCase.customer_phone}
-            onChange={(e) => setNewCase({ ...newCase, customer_phone: e.target.value })}
-            required
-          />
-          <Select
-            label="Loan Type"
-            value={newCase.loan_type}
-            onChange={(e) => setNewCase({ ...newCase, loan_type: e.target.value })}
-            required
-            options={LOAN_TYPES.map(type => ({ value: type.value, label: type.label }))}
-          />
-          <Input
-            label="Loan Amount"
-            type="number"
-            step="0.01"
-            min="0"
-            value={loanAmountInput}
-            onChange={(e) => {
-              setLoanAmountInput(e.target.value);
-              const amount = parseFloat(e.target.value);
-              if (!isNaN(amount)) {
-                setNewCase({ ...newCase, loan_amount: amount });
-              }
-            }}
-            placeholder="0.00"
-            required
-          />
+          <div>
+            <Input
+              name="customer_name"
+              label="Customer Name"
+              value={newCase.customer_name}
+              onChange={(e) => {
+                setNewCase({ ...newCase, customer_name: e.target.value });
+                if (fieldErrors.customer_name) {
+                  setFieldErrors({ ...fieldErrors, customer_name: '' });
+                }
+              }}
+              required
+              error={fieldErrors.customer_name}
+            />
+          </div>
+          <div>
+            <Input
+              name="customer_email"
+              label="Customer Email"
+              type="email"
+              value={newCase.customer_email}
+              onChange={(e) => {
+                setNewCase({ ...newCase, customer_email: e.target.value });
+                if (fieldErrors.customer_email) {
+                  setFieldErrors({ ...fieldErrors, customer_email: '' });
+                }
+              }}
+              required
+              error={fieldErrors.customer_email}
+            />
+          </div>
+          <div>
+            <Input
+              name="customer_phone"
+              label="Customer Phone"
+              type="tel"
+              value={newCase.customer_phone}
+              onChange={(e) => {
+                setNewCase({ ...newCase, customer_phone: e.target.value });
+                if (fieldErrors.customer_phone) {
+                  setFieldErrors({ ...fieldErrors, customer_phone: '' });
+                }
+              }}
+              placeholder="+91 9876543210"
+              required
+              error={fieldErrors.customer_phone}
+            />
+          </div>
+          <div>
+            <Select
+              name="loan_type"
+              label="Loan Type"
+              value={newCase.loan_type}
+              onChange={(e) => {
+                setNewCase({ ...newCase, loan_type: e.target.value });
+                if (fieldErrors.loan_type) {
+                  setFieldErrors({ ...fieldErrors, loan_type: '' });
+                }
+              }}
+              required
+              options={LOAN_TYPES.map(type => ({ value: type.value, label: type.label }))}
+              error={fieldErrors.loan_type}
+            />
+          </div>
+          <div>
+            <Input
+              name="loan_amount"
+              label="Loan Amount"
+              type="number"
+              step="0.01"
+              min="0"
+              value={loanAmountInput}
+              onChange={(e) => {
+                setLoanAmountInput(e.target.value);
+                const amount = parseFloat(e.target.value);
+                if (!isNaN(amount)) {
+                  setNewCase({ ...newCase, loan_amount: amount });
+                }
+                if (fieldErrors.loan_amount) {
+                  setFieldErrors({ ...fieldErrors, loan_amount: '' });
+                }
+              }}
+              placeholder="0.00"
+              required
+              error={fieldErrors.loan_amount}
+            />
+            <p className="mt-1 text-xs text-gray-500">Enter amount in rupees (supports decimal values)</p>
+          </div>
           <Select
             label="Source Type"
             value={newCase.source_type || ''}
@@ -376,6 +747,9 @@ export default function CasesPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Documents (Optional)
             </label>
+            {fieldErrors.documents && (
+              <p className="text-sm text-red-600 mb-2">{fieldErrors.documents}</p>
+            )}
             <div className="space-y-2">
               <label className="flex items-center justify-center w-full h-32 px-4 transition bg-white border-2 border-gray-300 border-dashed rounded-lg appearance-none cursor-pointer hover:border-primary-500 focus:outline-none">
                 <span className="flex items-center space-x-2">
@@ -391,7 +765,27 @@ export default function CasesPage() {
                   accept="image/*,.pdf,.xlsx,.xls,.doc,.docx"
                   onChange={(e) => {
                     const files = Array.from(e.target.files || []);
-                    setSelectedFiles((prev) => [...prev, ...files]);
+                    const maxFileSize = 10 * 1024 * 1024; // 10MB
+                    const validFiles: File[] = [];
+                    const errors: string[] = [];
+                    
+                    files.forEach(file => {
+                      if (file.size > maxFileSize) {
+                        errors.push(`${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) exceeds 10MB limit`);
+                      } else {
+                        validFiles.push(file);
+                      }
+                    });
+                    
+                    if (errors.length > 0) {
+                      setFieldErrors({ ...fieldErrors, documents: errors.join(', ') });
+                    } else if (fieldErrors.documents) {
+                      const newErrors = { ...fieldErrors };
+                      delete newErrors.documents;
+                      setFieldErrors(newErrors);
+                    }
+                    
+                    setSelectedFiles((prev) => [...prev, ...validFiles]);
                   }}
                 />
               </label>
@@ -442,6 +836,70 @@ export default function CasesPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Customer Details Modal */}
+      <Modal
+        isOpen={showCustomerDetailModal}
+        onClose={() => {
+          setShowCustomerDetailModal(false);
+          setSelectedCaseForDetails(null);
+          setCustomerDetails(null);
+        }}
+        title={selectedCaseForDetails ? `Customer Details - ${selectedCaseForDetails.case_number}` : 'Customer Details'}
+      >
+        {loadingDetails ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            <p className="mt-2 text-gray-600">Loading customer details...</p>
+          </div>
+        ) : customerDetails ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(() => {
+                const visibleFields = templateFields.length > 0
+                  ? templateFields.filter(f => f.is_visible).map(f => f.field_key)
+                  : null;
+                
+                return Object.entries(customerDetails.detail_data || {})
+                  .filter(([key]) => {
+                    if (key.startsWith('raw_')) return false;
+                    if (visibleFields === null) return true; // Show all if no template
+                    return visibleFields.includes(key);
+                  })
+                  .sort(([keyA], [keyB]) => {
+                    if (visibleFields === null) return 0;
+                    const orderA = templateFields.find(f => f.field_key === keyA)?.display_order || 999;
+                    const orderB = templateFields.find(f => f.field_key === keyB)?.display_order || 999;
+                    return orderA - orderB;
+                  })
+                  .map(([key, value]: [string, any]) => {
+                    const templateField = templateFields.find(f => f.field_key === key);
+                    const formattedKey = templateField?.field_label || key
+                      .split('_')
+                      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                      .join(' ');
+                    
+                    return (
+                      <div key={key} className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 mb-1">{formattedKey}</p>
+                        <p className="text-sm font-medium text-gray-900">{value || 'Not mentioned'}</p>
+                      </div>
+                    );
+                  });
+              })()}
+            </div>
+            {Object.keys(customerDetails.detail_data || {}).length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                No customer details available
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            No customer detail sheet uploaded for this case
+          </div>
+        )}
       </Modal>
     </div>
   );

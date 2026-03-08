@@ -16,6 +16,7 @@ export const updateUserSchema = z.object({
   }),
   body: z.object({
     email: z.string().email('Invalid email format').optional(),
+    password: z.string().min(8, 'Password must be at least 8 characters').optional(),
     firstName: z.string().min(1).optional(),
     lastName: z.string().min(1).optional(),
     isActive: z.boolean().optional(),
@@ -155,6 +156,7 @@ export const createAnnouncementSchema = z.object({
   body: z.object({
     title: z.string().min(1, 'Title is required'),
     content: z.string().min(1, 'Content is required'),
+    category: z.enum(['GENERAL', 'BANK_UPDATES', 'SALES_REPORT']).default('GENERAL'),
   }),
 });
 
@@ -166,6 +168,7 @@ export const updateAnnouncementSchema = z.object({
     title: z.string().min(1).optional(),
     content: z.string().min(1).optional(),
     isActive: z.boolean().optional(),
+    category: z.enum(['GENERAL', 'BANK_UPDATES', 'SALES_REPORT']).optional(),
   }),
 });
 

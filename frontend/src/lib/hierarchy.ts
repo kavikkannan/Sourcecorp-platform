@@ -67,5 +67,10 @@ export const hierarchyService = {
     const response = await api.get('/users/me/subordinates');
     return response.data;
   },
+
+  async getAllMySubordinates(): Promise<User[]> {
+    const response = await api.get('/users/me/subordinates/all');
+    return response.data;
+  },
 };
 

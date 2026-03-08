@@ -12,8 +12,17 @@ export class AuditController {
       if (req.query.userId) filters.userId = req.query.userId as string;
       if (req.query.action) filters.action = req.query.action as string;
       if (req.query.resourceType) filters.resourceType = req.query.resourceType as string;
+      if (req.query.month) filters.month = req.query.month as string;
+      if (req.query.logType) filters.logType = req.query.logType as 'audit' | 'error' | 'all';
 
-      const result = await AuditService.getLogs(limit, offset, filters);
+      let result;
+      if (filters.logType === 'error') {
+        result = await AuditService.getErrorLogs(limit, offset, filters);
+      } else if (filters.logType === 'all') {
+        result = await AuditService.getAllLogs(limit, offset, filters);
+      } else {
+        result = await AuditService.getLogs(limit, offset, filters);
+      }
 
       res.json({
         logs: result.logs,

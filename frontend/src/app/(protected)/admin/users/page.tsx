@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Shield, X } from 'lucide-react';
+import { Plus, Edit, Shield, X, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Table from '@/components/Table';
@@ -183,6 +183,20 @@ export default function UsersPage() {
     }
   };
 
+  const handleDelete = async (id: string, email: string) => {
+    if (!confirm(`Are you sure you want to delete the user "${email}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/admin/users/${id}`);
+      fetchUsers();
+    } catch (error: any) {
+      const errorMessage = getErrorMessage(error);
+      alert(`Failed to delete user: ${errorMessage}`);
+    }
+  };
+
   const columns = [
     {
       key: 'name',
@@ -245,6 +259,12 @@ export default function UsersPage() {
                 label: 'Manage Roles',
                 onClick: () => handleManageRoles(user),
                 icon: <Shield className="w-4 h-4" />,
+              },
+              {
+                label: 'Delete User',
+                onClick: () => handleDelete(user.id, user.email),
+                icon: <Trash2 className="w-4 h-4" />,
+                variant: 'danger',
               },
             ]}
           />

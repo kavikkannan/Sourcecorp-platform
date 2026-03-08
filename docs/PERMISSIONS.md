@@ -17,6 +17,7 @@ Example: `admin.users.create`
 - `admin.users.read` - View user list and details
 - `admin.users.create` - Create new users
 - `admin.users.update` - Edit user information
+- `admin.users.delete` - Delete users
 - `admin.users.assign_role` - Assign roles to users
 - `admin.users.remove_role` - Remove roles from users
 

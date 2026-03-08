@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../config/logger';
 import { ZodError } from 'zod';
+import { AuditService } from '../services/audit.service';
 
 export const errorHandler = (
   err: any,
@@ -13,6 +14,24 @@ export const errorHandler = (
     stack: err.stack,
     path: req.path,
     method: req.method,
+  });
+
+  // Log error to database (don't await to avoid blocking response)
+  const userId = (req as any).user?.userId;
+  AuditService.createErrorLog({
+    userId: userId || undefined,
+    errorMessage: err.message || 'Internal server error',
+    errorStack: err.stack,
+    errorCode: err.code || err.name || undefined,
+    path: req.path,
+    method: req.method,
+    requestBody: req.body && Object.keys(req.body).length > 0 ? req.body : undefined,
+    requestQuery: req.query && Object.keys(req.query).length > 0 ? req.query : undefined,
+    ipAddress: req.ip || (req.headers['x-forwarded-for'] as string) || undefined,
+    userAgent: req.headers['user-agent'] || undefined,
+  }).catch((logError) => {
+    // Silently fail if error logging fails
+    logger.error('Failed to log error to database', logError);
   });
 
   // Zod validation errors

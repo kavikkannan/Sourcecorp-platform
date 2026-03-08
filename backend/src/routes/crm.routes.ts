@@ -55,6 +55,14 @@ router.get(
   CRMController.getCaseById
 );
 
+// Delete case
+router.delete(
+  '/cases/:id',
+  requirePermission('crm.case.delete'),
+  validate(validators.caseIdSchema),
+  CRMController.deleteCase
+);
+
 // ============================================
 // CASE ASSIGNMENT
 // ============================================
@@ -111,10 +119,11 @@ router.get(
 // NOTES MANAGEMENT
 // ============================================
 
-// Add note to case
+// Add note to case (with optional file upload)
 router.post(
   '/cases/:id/notes',
   requirePermission('crm.case.add_note'),
+  upload.single('file'),
   validate(validators.addNoteSchema),
   CRMController.addNote
 );
@@ -143,10 +152,11 @@ router.get(
 // NOTIFICATIONS/SCHEDULING
 // ============================================
 
-// Schedule notification for a case
+// Schedule notification for a case (with optional file upload)
 router.post(
   '/cases/:id/schedule',
   requirePermission('crm.case.add_note'),
+  upload.single('file'),
   validate(validators.scheduleNotificationSchema),
   CRMController.scheduleNotification
 );
@@ -188,6 +198,74 @@ router.patch(
   requirePermission('crm.case.view'),
   validate(validators.markNotificationCompletionSchema),
   CRMController.markNotificationCompletion
+);
+
+// ============================================
+// CUSTOMER DETAIL SHEETS
+// ============================================
+
+// Upload customer detail sheet (Excel file)
+router.post(
+  '/cases/:id/customer-detail-sheet',
+  requirePermission('crm.case.upload_document'),
+  upload.single('file'),
+  CRMController.uploadCustomerDetailSheet
+);
+
+// Get customer detail sheet for a case
+router.get(
+  '/cases/:id/customer-detail-sheet',
+  requirePermission('crm.case.view'),
+  validate(validators.caseIdSchema),
+  CRMController.getCustomerDetailSheet
+);
+
+// ============================================
+// CUSTOMER DETAIL CHANGE REQUESTS
+// ============================================
+
+// Create a change request for customer details
+router.post(
+  '/cases/:id/customer-detail-change-request',
+  requirePermission('crm.case.customer_details.request_change'),
+  validate(validators.caseIdSchema),
+  CRMController.createCustomerDetailChangeRequest
+);
+
+// Get all change requests for a case
+router.get(
+  '/cases/:id/customer-detail-change-requests',
+  requirePermission('crm.case.view'),
+  validate(validators.caseIdSchema),
+  CRMController.getCustomerDetailChangeRequests
+);
+
+// Get pending change requests for current user
+router.get(
+  '/customer-detail-change-requests/pending',
+  requirePermission('crm.case.customer_details.modify'),
+  CRMController.getPendingChangeRequests
+);
+
+// Get users with modify permission (above in hierarchy)
+router.get(
+  '/customer-detail-change-requests/approvers',
+  requirePermission('crm.case.customer_details.request_change'),
+  CRMController.getUsersWithModifyPermission
+);
+
+// Approve a change request
+router.post(
+  '/customer-detail-change-requests/:id/approve',
+  requirePermission('crm.case.customer_details.modify'),
+  CRMController.approveCustomerDetailChangeRequest
+);
+
+// Reject a change request
+router.post(
+  '/customer-detail-change-requests/:id/reject',
+  requirePermission('crm.case.customer_details.modify'),
+  CRMController.rejectCustomerDetailChangeRequest
 );
 
 export default router;

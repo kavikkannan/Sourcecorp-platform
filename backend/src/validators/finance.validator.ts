@@ -5,6 +5,9 @@ export const calculateEligibilitySchema = z.object({
     case_id: z.string().uuid('Invalid case ID'),
     monthly_income: z.number().positive('Monthly income must be positive'),
     requested_amount: z.number().positive('Requested amount must be positive'),
+    income_multiplier: z.number().positive('Income multiplier must be positive').optional(),
+    max_foir: z.number().min(0).max(100, 'Max FOIR must be between 0 and 100').optional(),
+    company_listed: z.enum(['Super Cat A', 'Cat A', 'Cat B', 'Cat C', 'Cat D', 'Unlisted']).optional(),
   }),
 });
 

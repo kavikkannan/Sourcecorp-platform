@@ -61,6 +61,12 @@ export interface Note {
     email: string;
     name: string;
   };
+  document?: {
+    id: string;
+    file_name: string;
+    mime_type: string;
+    file_size: number;
+  } | null;
 }
 
 export interface TimelineEvent {
@@ -107,6 +113,15 @@ export interface CaseNotification {
   completion_status: 'ONGOING' | 'COMPLETED';
   created_at: string;
   updated_at: string;
+  document?: {
+    id: string;
+    file_name: string;
+    mime_type: string;
+    file_size: number;
+  } | null;
+  change_request_id?: string;
+  change_request_status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  change_request_changes?: Record<string, any>;
 }
 
 export interface CreateCaseData {
@@ -150,8 +165,11 @@ export const crmService = {
 
   async getCases(params?: {
     status?: string;
+    view_type?: 'individual' | 'team';
+    created_by?: string;
     limit?: number;
     offset?: number;
+    month?: string; // Format: 'YYYY-MM'
   }): Promise<{ cases: Case[]; total: number; limit: number; offset: number }> {
     const response = await api.get('/crm/cases', { params });
     return response.data;
@@ -167,6 +185,11 @@ export const crmService = {
     await api.post(`/crm/cases/${caseId}/assign`, {
       assigned_to: userId,
     });
+  },
+
+  // Delete case
+  async deleteCase(caseId: string): Promise<void> {
+    await api.delete(`/crm/cases/${caseId}`);
   },
 
   // Status
@@ -207,8 +230,18 @@ export const crmService = {
   },
 
   // Notes
-  async addNote(caseId: string, note: string): Promise<Note> {
-    const response = await api.post(`/crm/cases/${caseId}/notes`, { note });
+  async addNote(caseId: string, note: string, file?: File): Promise<Note> {
+    const formData = new FormData();
+    formData.append('note', note);
+    if (file) {
+      formData.append('file', file);
+    }
+
+    const response = await api.post(`/crm/cases/${caseId}/notes`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 
@@ -235,9 +268,24 @@ export const crmService = {
       scheduled_for: string;
       message?: string;
       scheduled_at: string;
-    }
+    },
+    file?: File
   ): Promise<CaseNotification> {
-    const response = await api.post(`/crm/cases/${caseId}/schedule`, data);
+    const formData = new FormData();
+    formData.append('scheduled_for', data.scheduled_for);
+    formData.append('scheduled_at', data.scheduled_at);
+    if (data.message) {
+      formData.append('message', data.message);
+    }
+    if (file) {
+      formData.append('file', file);
+    }
+
+    const response = await api.post(`/crm/cases/${caseId}/schedule`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 
@@ -250,6 +298,8 @@ export const crmService = {
   async getUserNotifications(params?: {
     is_read?: boolean;
     completion_status?: 'ONGOING' | 'COMPLETED';
+    due_date_from?: string;
+    due_date_to?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ notifications: CaseNotification[]; total: number }> {
@@ -274,6 +324,79 @@ export const crmService = {
       completion_status: completionStatus,
     });
   },
+
+  // Customer Detail Sheets
+  async uploadCustomerDetailSheet(caseId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/crm/cases/${caseId}/customer-detail-sheet`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  async getCustomerDetailSheet(caseId: string): Promise<any> {
+    const response = await api.get(`/crm/cases/${caseId}/customer-detail-sheet`);
+    return response.data;
+  },
+
+  async getCustomerDetailTemplate(): Promise<any[]> {
+    const response = await api.get('/admin/customer-detail-template');
+    return response.data;
+  },
+
+  async updateCustomerDetailTemplate(fields: Array<{
+    field_key: string;
+    field_label: string;
+    is_visible: boolean;
+    display_order: number;
+  }>): Promise<void> {
+    await api.post('/admin/customer-detail-template', { fields });
+  },
+
+  // Customer Detail Change Requests
+  async createCustomerDetailChangeRequest(
+    caseId: string,
+    requestedFor: string,
+    requestedChanges: Record<string, any>
+  ): Promise<any> {
+    const response = await api.post(`/crm/cases/${caseId}/customer-detail-change-request`, {
+      requested_for: requestedFor,
+      requested_changes: requestedChanges,
+    });
+    return response.data;
+  },
+
+  async getCustomerDetailChangeRequests(caseId: string): Promise<any[]> {
+    const response = await api.get(`/crm/cases/${caseId}/customer-detail-change-requests`);
+    return response.data.change_requests;
+  },
+
+  async getPendingChangeRequests(): Promise<any[]> {
+    const response = await api.get('/crm/customer-detail-change-requests/pending');
+    return response.data.change_requests;
+  },
+
+  async getUsersWithModifyPermission(): Promise<any[]> {
+    const response = await api.get('/crm/customer-detail-change-requests/approvers');
+    return response.data.users;
+  },
+
+  async approveCustomerDetailChangeRequest(requestId: string, remarks?: string): Promise<any> {
+    const response = await api.post(`/crm/customer-detail-change-requests/${requestId}/approve`, {
+      remarks,
+    });
+    return response.data;
+  },
+
+  async rejectCustomerDetailChangeRequest(requestId: string, remarks?: string): Promise<any> {
+    const response = await api.post(`/crm/customer-detail-change-requests/${requestId}/reject`, {
+      remarks,
+    });
+    return response.data;
+  },
 };
 
 // Constants
@@ -286,15 +409,14 @@ export const LOAN_TYPES = [
 ];
 
 export const CASE_STATUSES = [
-  { value: 'NEW', label: 'New', color: 'bg-blue-100 text-blue-800' },
-  { value: 'ASSIGNED', label: 'Assigned', color: 'bg-purple-100 text-purple-800' },
-  { value: 'IN_PROGRESS', label: 'In Progress', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'PENDING_DOCUMENTS', label: 'Pending Documents', color: 'bg-orange-100 text-orange-800' },
-  { value: 'UNDER_REVIEW', label: 'Under Review', color: 'bg-indigo-100 text-indigo-800' },
-  { value: 'APPROVED', label: 'Approved', color: 'bg-green-100 text-green-800' },
-  { value: 'REJECTED', label: 'Rejected', color: 'bg-red-100 text-red-800' },
-  { value: 'DISBURSED', label: 'Disbursed', color: 'bg-teal-100 text-teal-800' },
-  { value: 'CLOSED', label: 'Closed', color: 'bg-gray-100 text-gray-800' },
+  { value: 'NEW', label: 'New Case', color: 'bg-blue-100 text-blue-800' },
+  { value: 'LOGIN', label: 'Login Case', color: 'bg-purple-100 text-purple-800' },
+  { value: 'SALES_REWORK', label: 'Sales Rework', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'CREDIT_REWORK', label: 'Credit Rework', color: 'bg-orange-100 text-orange-800' },
+  { value: 'CREDIT_UNDERWRITING', label: 'Credit Underwriting', color: 'bg-indigo-100 text-indigo-800' },
+  { value: 'CREDIT_APPROVED', label: 'Credit Approved', color: 'bg-green-100 text-green-800' },
+  { value: 'DISBURSED', label: 'Disbursed Case', color: 'bg-teal-100 text-teal-800' },
+  { value: 'REJECTED', label: 'Rejected Case', color: 'bg-red-100 text-red-800' },
 ];
 
 export const getStatusColor = (status: string): string => {

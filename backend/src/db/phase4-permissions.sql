@@ -15,11 +15,19 @@ ON CONFLICT (name) DO NOTHING;
 
 -- Assign permissions to appropriate roles
 -- All authenticated users get basic task and note permissions
+-- Assign to common role names (case-insensitive matching)
 INSERT INTO auth_schema.role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM auth_schema.roles r, auth_schema.permissions p
-WHERE r.name IN ('employee', 'manager', 'admin', 'super_admin')
+WHERE LOWER(r.name) IN ('employee', 'manager', 'admin', 'super_admin', 'user')
   AND p.name IN ('task.create.personal', 'task.update.status', 'note.create')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- Also assign note.create to ALL existing roles (for maximum compatibility)
+INSERT INTO auth_schema.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM auth_schema.roles r, auth_schema.permissions p
+WHERE p.name = 'note.create'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- Managers get hierarchical task permissions

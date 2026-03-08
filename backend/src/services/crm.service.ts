@@ -3,6 +3,7 @@ import { logger } from '../config/logger';
 import { Case, CaseWithDetails, CaseAssignment, CaseStatusHistory, Document, CaseNote, TimelineEvent, User } from '../types';
 import { AuditService } from './audit.service';
 import { HierarchyService } from './hierarchy.service';
+import fs from 'fs/promises';
 
 export class CRMService {
   
@@ -53,22 +54,6 @@ export class CRMService {
       [newCase.id, data.created_by]
     );
 
-    // Update case status to ASSIGNED since it's now assigned to the creator
-    await query(
-      `UPDATE crm_schema.cases 
-       SET current_status = 'ASSIGNED', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [newCase.id]
-    );
-
-    // Create status history for assignment
-    await query(
-      `INSERT INTO crm_schema.case_status_history 
-       (case_id, from_status, to_status, changed_by, remarks)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [newCase.id, 'NEW', 'ASSIGNED', data.created_by, 'Case assigned to creator']
-    );
-
     // Audit log for case creation
     await AuditService.createLog({
       userId: data.created_by,
@@ -99,10 +84,13 @@ export class CRMService {
     userRole?: string;
     userTeams?: string[];
     status?: string;
+    view_type?: 'individual' | 'team';
+    created_by?: string;
     limit?: number;
     offset?: number;
+    month?: string; // Format: 'YYYY-MM'
   }): Promise<{ cases: CaseWithDetails[], total: number }> {
-    const { userId, userRole, userTeams, status, limit = 20, offset = 0 } = filters;
+    const { userId, userRole, userTeams, status, view_type, created_by, limit = 20, offset = 0, month } = filters;
     
     let whereClause = 'WHERE 1=1';
     const params: any[] = [];
@@ -110,17 +98,95 @@ export class CRMService {
 
     // RBAC filtering
     if (userRole !== 'admin' && userRole !== 'super_admin') {
-      // Non-admins see only assigned cases or cases created by them
-      // Scheduled users access cases via notifications page, not case list
-      whereClause += ` AND (
-        c.created_by = $${paramIndex} 
-        OR EXISTS (
-          SELECT 1 FROM crm_schema.case_assignments ca
-          WHERE ca.case_id = c.id AND ca.assigned_to = $${paramIndex}
-        )
-      )`;
-      params.push(userId);
-      paramIndex++;
+      if (view_type === 'team') {
+        // Team view: show cases created by or currently assigned to users lower in hierarchy (subordinates)
+        // Include cases currently assigned to subordinates, even if created by current user (transferred cases)
+        // We check only the most recent assignment (current assignment)
+        whereClause += ` AND (
+          -- Cases created by subordinates (but not currently assigned back to manager)
+          (
+          c.created_by != $${paramIndex}
+            AND c.created_by IN (
+              WITH RECURSIVE subordinates AS (
+                -- Direct subordinates
+                SELECT subordinate_id
+                FROM auth_schema.user_hierarchy
+                WHERE manager_id = $${paramIndex}
+                UNION
+                -- Indirect subordinates (recursive)
+                SELECT uh.subordinate_id
+                FROM auth_schema.user_hierarchy uh
+                INNER JOIN subordinates s ON uh.manager_id = s.subordinate_id
+              )
+              SELECT subordinate_id FROM subordinates
+            )
+            AND NOT EXISTS (
+              SELECT 1 
+              FROM crm_schema.case_assignments ca
+              WHERE ca.case_id = c.id
+              AND ca.assigned_to = $${paramIndex}
+              AND ca.assigned_at = (
+                SELECT MAX(assigned_at)
+                FROM crm_schema.case_assignments
+                WHERE case_id = c.id
+              )
+            )
+          )
+          OR
+          -- Cases currently assigned to subordinates (check most recent assignment only)
+          -- This includes cases created by current user but transferred to subordinates
+          EXISTS (
+            SELECT 1 
+            FROM crm_schema.case_assignments ca
+              WHERE ca.case_id = c.id 
+              AND ca.assigned_to != $${paramIndex}
+              AND ca.assigned_to IN (
+                WITH RECURSIVE subordinates AS (
+                  SELECT subordinate_id
+                  FROM auth_schema.user_hierarchy
+                  WHERE manager_id = $${paramIndex}
+                  UNION
+                  SELECT uh.subordinate_id
+                  FROM auth_schema.user_hierarchy uh
+                  INNER JOIN subordinates s ON uh.manager_id = s.subordinate_id
+                )
+                SELECT subordinate_id FROM subordinates
+              )
+            AND ca.assigned_at = (
+              SELECT MAX(assigned_at)
+              FROM crm_schema.case_assignments
+              WHERE case_id = c.id
+            )
+          )
+        )`;
+        params.push(userId);
+        paramIndex++;
+      } else {
+        // Individual view: show only cases currently assigned to current user
+        // Cases created by the user but assigned to someone else should NOT appear
+        // We check only the most recent assignment (current assignment)
+        // Also include cases created by user that have no assignments (edge case)
+        whereClause += ` AND (
+          EXISTS (
+            SELECT 1 FROM (
+              SELECT DISTINCT ON (case_id) *
+              FROM crm_schema.case_assignments
+              WHERE case_id = c.id
+              ORDER BY case_id, assigned_at DESC
+            ) current_assignment
+            WHERE current_assignment.assigned_to = $${paramIndex}
+          )
+          OR (
+          c.created_by = $${paramIndex} 
+            AND NOT EXISTS (
+              SELECT 1 FROM crm_schema.case_assignments
+              WHERE case_id = c.id
+            )
+          )
+        )`;
+        params.push(userId);
+        paramIndex++;
+      }
     }
 
     // Status filter
@@ -128,6 +194,40 @@ export class CRMService {
       whereClause += ` AND c.current_status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
+    }
+
+    // Created by filter (for team view - filter by subordinate)
+    // For team view, also include cases currently assigned to the selected user
+    if (created_by) {
+      if (view_type === 'team') {
+        // In team view, filter by cases created by OR currently assigned to the selected user
+        whereClause += ` AND (
+          c.created_by = $${paramIndex}
+          OR EXISTS (
+            SELECT 1 
+            FROM (
+              SELECT DISTINCT ON (case_id) case_id, assigned_to, assigned_at
+              FROM crm_schema.case_assignments
+              WHERE case_id = c.id
+              ORDER BY case_id, assigned_at DESC
+            ) current_assignment
+            WHERE current_assignment.assigned_to = $${paramIndex}
+          )
+        )`;
+      } else {
+        // In individual view, filter by creator only
+        whereClause += ` AND c.created_by = $${paramIndex}`;
+      }
+      params.push(created_by);
+      paramIndex++;
+    }
+
+    // Month filter: filter by year and month of creation
+    if (month) {
+      const [year, monthNum] = month.split('-');
+      whereClause += ` AND EXTRACT(YEAR FROM c.created_at) = $${paramIndex} AND EXTRACT(MONTH FROM c.created_at) = $${paramIndex + 1}`;
+      params.push(parseInt(year), parseInt(monthNum));
+      paramIndex += 2;
     }
 
     params.push(limit, offset);
@@ -161,7 +261,6 @@ export class CRMService {
     const countResult = await query(
       `SELECT COUNT(DISTINCT c.id) as total 
        FROM crm_schema.cases c
-       LEFT JOIN crm_schema.case_assignments ca ON c.id = ca.case_id
        ${whereClause}`,
       params.slice(0, -2)
     );
@@ -223,7 +322,7 @@ export class CRMService {
 
     const caseData = result.rows[0];
 
-    // Check RBAC: non-admins can only see their own cases, assigned cases, or cases they're scheduled for
+    // Check RBAC: non-admins can only see their own cases, assigned cases, cases created by subordinates, or cases they're scheduled for
     if (userRole !== 'admin' && userRole !== 'super_admin') {
       const accessCheck = await query(
         `SELECT 1 FROM crm_schema.cases c
@@ -231,6 +330,20 @@ export class CRMService {
          WHERE c.id = $1 AND (
            c.created_by = $2 
            OR ca.assigned_to = $2
+           OR c.created_by IN (
+             WITH RECURSIVE subordinates AS (
+               -- Direct subordinates
+               SELECT subordinate_id
+               FROM auth_schema.user_hierarchy
+               WHERE manager_id = $2
+               UNION
+               -- Indirect subordinates (recursive)
+               SELECT uh.subordinate_id
+               FROM auth_schema.user_hierarchy uh
+               INNER JOIN subordinates s ON uh.manager_id = s.subordinate_id
+             )
+             SELECT subordinate_id FROM subordinates
+           )
            OR EXISTS (
              SELECT 1 FROM crm_schema.case_notifications cn
              WHERE cn.case_id = c.id AND cn.scheduled_for = $2
@@ -323,13 +436,7 @@ export class CRMService {
       [data.case_id, data.assigned_to, data.assigned_by]
     );
 
-    // Update case status to ASSIGNED if it's NEW
-    await query(
-      `UPDATE crm_schema.cases 
-       SET current_status = 'ASSIGNED', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND current_status = 'NEW'`,
-      [data.case_id]
-    );
+    // Don't automatically change status on assignment - keep current status
 
     // Audit log
     await AuditService.createLog({
@@ -472,13 +579,14 @@ export class CRMService {
     case_id: string;
     note: string;
     created_by: string;
+    document_id?: string | null;
   }, auditData: { ipAddress?: string; userAgent?: string }): Promise<CaseNote> {
     const result = await query(
       `INSERT INTO crm_schema.case_notes 
-       (case_id, note, created_by)
-       VALUES ($1, $2, $3)
+       (case_id, note, created_by, document_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [data.case_id, data.note, data.created_by]
+      [data.case_id, data.note, data.created_by, data.document_id || null]
     );
 
     // Audit log
@@ -487,7 +595,7 @@ export class CRMService {
       action: 'case.note_add',
       resourceType: 'case',
       resourceId: data.case_id,
-      details: { note: data.note },
+      details: { note: data.note, document_id: data.document_id },
       ipAddress: auditData.ipAddress,
       userAgent: auditData.userAgent,
     });
@@ -500,9 +608,14 @@ export class CRMService {
       `SELECT n.*, 
         u.email as creator_email,
         u.first_name as creator_first_name,
-        u.last_name as creator_last_name
+        u.last_name as creator_last_name,
+        d.id as document_id,
+        d.file_name as document_file_name,
+        d.mime_type as document_mime_type,
+        d.file_size as document_file_size
        FROM crm_schema.case_notes n
        LEFT JOIN auth_schema.users u ON n.created_by = u.id
+       LEFT JOIN crm_schema.documents d ON n.document_id = d.id
        WHERE n.case_id = $1
        ORDER BY n.created_at DESC`,
       [caseId]
@@ -788,6 +901,7 @@ export class CRMService {
     scheduled_by: string;
     message?: string;
     scheduled_at: Date;
+    document_id?: string | null;
   }, auditData: { ipAddress?: string; userAgent?: string }): Promise<any> {
     // Validate that scheduled_for is in user's hierarchy (above or below)
     const scheduleableUsers = await this.getScheduleableUsers(data.scheduled_by);
@@ -799,8 +913,8 @@ export class CRMService {
 
     const result = await query(
       `INSERT INTO crm_schema.case_notifications 
-       (case_id, scheduled_for, scheduled_by, message, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5)
+       (case_id, scheduled_for, scheduled_by, message, scheduled_at, document_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
         data.case_id,
@@ -808,6 +922,7 @@ export class CRMService {
         data.scheduled_by,
         data.message || null,
         data.scheduled_at,
+        data.document_id || null,
       ]
     );
 
@@ -822,7 +937,8 @@ export class CRMService {
       details: { 
         scheduled_for: data.scheduled_for, 
         scheduled_at: data.scheduled_at,
-        message: data.message 
+        message: data.message,
+        document_id: data.document_id
       },
       ipAddress: auditData.ipAddress,
       userAgent: auditData.userAgent,
@@ -843,10 +959,15 @@ export class CRMService {
         scheduled_for_user.last_name as scheduled_for_last_name,
         scheduled_by_user.email as scheduled_by_email,
         scheduled_by_user.first_name as scheduled_by_first_name,
-        scheduled_by_user.last_name as scheduled_by_last_name
+        scheduled_by_user.last_name as scheduled_by_last_name,
+        d.id as document_id,
+        d.file_name as document_file_name,
+        d.mime_type as document_mime_type,
+        d.file_size as document_file_size
        FROM crm_schema.case_notifications n
        LEFT JOIN auth_schema.users scheduled_for_user ON n.scheduled_for = scheduled_for_user.id
        LEFT JOIN auth_schema.users scheduled_by_user ON n.scheduled_by = scheduled_by_user.id
+       LEFT JOIN crm_schema.documents d ON n.document_id = d.id
        WHERE n.case_id = $1
        ORDER BY n.scheduled_at DESC`,
       [caseId]
@@ -874,6 +995,12 @@ export class CRMService {
       completion_status: row.completion_status || 'ONGOING',
       created_at: row.created_at,
       updated_at: row.updated_at,
+      document: row.document_id ? {
+        id: row.document_id,
+        file_name: row.document_file_name,
+        mime_type: row.document_mime_type,
+        file_size: row.document_file_size,
+      } : null,
     }));
   }
 
@@ -883,10 +1010,12 @@ export class CRMService {
   static async getUserNotifications(userId: string, filters?: {
     is_read?: boolean;
     completion_status?: 'ONGOING' | 'COMPLETED';
+    due_date_from?: string;
+    due_date_to?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ notifications: any[]; total: number }> {
-    const { is_read, completion_status, limit = 50, offset = 0 } = filters || {};
+    const { is_read, completion_status, due_date_from, due_date_to, limit = 50, offset = 0 } = filters || {};
     
     let whereClause = 'WHERE n.scheduled_for = $1';
     const params: any[] = [userId];
@@ -904,6 +1033,18 @@ export class CRMService {
       paramIndex++;
     }
 
+    if (due_date_from) {
+      whereClause += ` AND n.scheduled_at >= $${paramIndex}`;
+      params.push(due_date_from);
+      paramIndex++;
+    }
+
+    if (due_date_to) {
+      whereClause += ` AND n.scheduled_at <= $${paramIndex}`;
+      params.push(due_date_to);
+      paramIndex++;
+    }
+
     params.push(limit, offset);
 
     const result = await query(
@@ -914,10 +1055,14 @@ export class CRMService {
         c.current_status as case_status,
         scheduled_by_user.email as scheduled_by_email,
         scheduled_by_user.first_name as scheduled_by_first_name,
-        scheduled_by_user.last_name as scheduled_by_last_name
+        scheduled_by_user.last_name as scheduled_by_last_name,
+        cr.id as change_request_id,
+        cr.status as change_request_status,
+        cr.requested_changes as change_request_changes
        FROM crm_schema.case_notifications n
        LEFT JOIN crm_schema.cases c ON n.case_id = c.id
        LEFT JOIN auth_schema.users scheduled_by_user ON n.scheduled_by = scheduled_by_user.id
+       LEFT JOIN crm_schema.customer_detail_change_requests cr ON n.change_request_id = cr.id
        ${whereClause}
        ORDER BY n.scheduled_at DESC
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
@@ -950,6 +1095,9 @@ export class CRMService {
       completion_status: row.completion_status || 'ONGOING',
       created_at: row.created_at,
       updated_at: row.updated_at,
+      change_request_id: row.change_request_id,
+      change_request_status: row.change_request_status,
+      change_request_changes: row.change_request_changes,
     }));
 
     return {
@@ -977,9 +1125,12 @@ export class CRMService {
       throw new Error('Notification not found or access denied');
     }
 
+    // If marking as read, also update status to SENT if it's currently PENDING
     const result = await query(
       `UPDATE crm_schema.case_notifications 
-       SET is_read = $1, updated_at = CURRENT_TIMESTAMP
+       SET is_read = $1, 
+           status = CASE WHEN $1 = true AND status = 'PENDING' THEN 'SENT' ELSE status END,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $2
        RETURNING *`,
       [isRead, notificationId]
@@ -1030,6 +1181,607 @@ export class CRMService {
     );
 
     return parseInt(result.rows[0].count, 10);
+  }
+
+  // ============================================
+  // CUSTOMER DETAIL SHEETS
+  // ============================================
+
+  static async uploadCustomerDetailSheet(
+    caseId: string,
+    excelBuffer: Buffer,
+    uploadedBy: string
+  ): Promise<any> {
+    // Verify case exists
+    const caseCheck = await query(
+      `SELECT id FROM crm_schema.cases WHERE id = $1`,
+      [caseId]
+    );
+
+    if (caseCheck.rows.length === 0) {
+      throw new Error('Case not found');
+    }
+
+    // Parse Excel file
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(excelBuffer);
+
+    const worksheet = workbook.worksheets[0];
+    const detailData: any = {};
+
+    // Field mapping based on the image provided
+    const fieldMappings: { [key: string]: string } = {
+      'Reference / Date': 'reference_date',
+      'CRO NAME': 'cro_name',
+      'Location': 'location',
+      'Scheme': 'scheme',
+      'Name': 'name',
+      'DATE OF BIRTH / AGE': 'date_of_birth',
+      'AADHAR NUMBER': 'aadhar_number',
+      'PAN Card Number': 'pan_number',
+      'Father Name': 'father_name',
+      'Mother Name': 'mother_name',
+      'Marital Status / name': 'marital_status',
+      'Current Address': 'current_address',
+      'Landmark': 'current_landmark',
+      'Own house / Rented': 'current_residence_type',
+      'Permanent Address': 'permanent_address',
+      'Landmark': 'permanent_landmark',
+      'Mobile No': 'mobile_number',
+      'Personal Mail ID': 'personal_email',
+      'Official Mail ID': 'official_email',
+      'Office Name': 'office_name',
+      'Office Address': 'office_address',
+      'Landmark': 'office_landmark',
+      'Designation': 'designation',
+      'Gross pay / Net pay': 'salary',
+      'Education Qualification': 'education_qualification',
+      'Salary account Bank Name': 'bank_name',
+      'Bank IFSC Code': 'bank_ifsc',
+      'Bank Account Number': 'bank_account_number',
+      'UAN NUMBER (PF NO)': 'uan_number',
+    };
+
+    // Read data from Excel (assuming format: Column A = Label, Column B = Value)
+    const usedFields = new Set<string>();
+    
+    for (let row = 1; row <= worksheet.rowCount; row++) {
+      const labelCell = worksheet.getCell(`A${row}`);
+      const valueCell = worksheet.getCell(`B${row}`);
+
+      if (labelCell.value) {
+        const label = String(labelCell.value).trim();
+        const value = valueCell.value ? String(valueCell.value).trim() : '';
+
+        if (!label) continue;
+
+        let matched = false;
+        // Find matching field key
+        for (const [excelLabel, fieldKey] of Object.entries(fieldMappings)) {
+          const normalizedLabel = label.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normalizedExcelLabel = excelLabel.toLowerCase().replace(/[^a-z0-9]/g, '');
+          
+          if (normalizedLabel === normalizedExcelLabel || 
+              normalizedLabel.includes(normalizedExcelLabel) || 
+              normalizedExcelLabel.includes(normalizedLabel)) {
+            if (!usedFields.has(fieldKey)) {
+              detailData[fieldKey] = value || 'Not mentioned';
+              usedFields.add(fieldKey);
+              matched = true;
+              break;
+            }
+          }
+        }
+
+        // Store raw label-value pairs for any unmapped fields
+        if (!matched && value) {
+          const rawKey = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+          if (!detailData[`raw_${rawKey}`]) {
+            detailData[`raw_${rawKey}`] = value;
+          }
+        }
+      }
+    }
+
+    // Handle special case for salary (Gross pay / Net pay)
+    if (detailData.salary && detailData.salary.includes('/')) {
+      const parts = detailData.salary.split('/').map((p: string) => p.trim());
+      detailData.gross_pay = parts[0] || 'Not mentioned';
+      detailData.net_pay = parts[1] || 'Not mentioned';
+    }
+
+    // Insert or update customer detail sheet
+    const existing = await query(
+      `SELECT id FROM crm_schema.customer_detail_sheets WHERE case_id = $1`,
+      [caseId]
+    );
+
+    let result;
+    if (existing.rows.length > 0) {
+      result = await query(
+        `UPDATE crm_schema.customer_detail_sheets 
+         SET detail_data = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE case_id = $2
+         RETURNING *`,
+        [JSON.stringify(detailData), caseId]
+      );
+    } else {
+      result = await query(
+        `INSERT INTO crm_schema.customer_detail_sheets 
+         (case_id, detail_data, uploaded_by)
+         VALUES ($1, $2, $3)
+         RETURNING *`,
+        [caseId, JSON.stringify(detailData), uploadedBy]
+      );
+    }
+
+    return {
+      id: result.rows[0].id,
+      case_id: result.rows[0].case_id,
+      detail_data: result.rows[0].detail_data,
+      uploaded_at: result.rows[0].uploaded_at,
+      updated_at: result.rows[0].updated_at,
+    };
+  }
+
+  static async getCustomerDetailSheet(caseId: string): Promise<any | null> {
+    const result = await query(
+      `SELECT * FROM crm_schema.customer_detail_sheets WHERE case_id = $1`,
+      [caseId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return {
+      id: result.rows[0].id,
+      case_id: result.rows[0].case_id,
+      detail_data: result.rows[0].detail_data,
+      uploaded_at: result.rows[0].uploaded_at,
+      updated_at: result.rows[0].updated_at,
+    };
+  }
+
+  static async getCustomerDetailTemplate(): Promise<any[]> {
+    const result = await query(
+      `SELECT * FROM crm_schema.customer_detail_template 
+       ORDER BY display_order, field_label`,
+      []
+    );
+
+    return result.rows;
+  }
+
+  static async updateCustomerDetailTemplate(fields: Array<{
+    field_key: string;
+    field_label: string;
+    is_visible: boolean;
+    display_order: number;
+  }>): Promise<void> {
+    // Delete all existing template entries
+    await query(`DELETE FROM crm_schema.customer_detail_template`, []);
+
+    // Insert new template entries
+    for (const field of fields) {
+      await query(
+        `INSERT INTO crm_schema.customer_detail_template 
+         (field_key, field_label, is_visible, display_order)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (field_key) 
+         DO UPDATE SET field_label = $2, is_visible = $3, display_order = $4`,
+        [field.field_key, field.field_label, field.is_visible, field.display_order]
+      );
+    }
+  }
+
+  // ============================================
+  // CASE DELETION
+  // ============================================
+
+  static async deleteCase(
+    caseId: string,
+    deletedBy: string,
+    auditData: { ipAddress?: string; userAgent?: string }
+  ): Promise<void> {
+    // First, get the case to verify it exists and get case number for audit
+    const caseResult = await query(
+      `SELECT case_number FROM crm_schema.cases WHERE id = $1`,
+      [caseId]
+    );
+
+    if (caseResult.rows.length === 0) {
+      throw new Error('Case not found');
+    }
+
+    const caseNumber = caseResult.rows[0].case_number;
+
+    // Get all documents for this case to delete physical files
+    const documentsResult = await query(
+      `SELECT file_path FROM crm_schema.documents WHERE case_id = $1`,
+      [caseId]
+    );
+
+    // Delete physical files (if they exist)
+    for (const doc of documentsResult.rows) {
+      try {
+        await fs.unlink(doc.file_path);
+      } catch (error) {
+        // Log but don't fail if file doesn't exist
+        logger.warn(`Failed to delete file ${doc.file_path}:`, error);
+      }
+    }
+
+    // Delete the case (CASCADE will handle related records)
+    await query(
+      `DELETE FROM crm_schema.cases WHERE id = $1`,
+      [caseId]
+    );
+
+    // Audit log
+    await AuditService.createLog({
+      userId: deletedBy,
+      action: 'case.delete',
+      resourceType: 'case',
+      resourceId: caseId,
+      details: { case_number: caseNumber },
+      ipAddress: auditData.ipAddress,
+      userAgent: auditData.userAgent,
+    });
+  }
+
+  // ============================================
+  // CUSTOMER DETAIL CHANGE REQUESTS
+  // ============================================
+
+  /**
+   * Create a change request for customer details
+   */
+  static async createCustomerDetailChangeRequest(data: {
+    caseId: string;
+    requestedBy: string;
+    requestedFor: string;
+    requestedChanges: Record<string, any>;
+  }): Promise<any> {
+    const result = await query(
+      `INSERT INTO crm_schema.customer_detail_change_requests 
+       (case_id, requested_by, requested_for, requested_changes)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [data.caseId, data.requestedBy, data.requestedFor, JSON.stringify(data.requestedChanges)]
+    );
+
+    const changeRequest = result.rows[0];
+
+    // Get case information for notification
+    const caseResult = await query(
+      `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
+      [data.caseId]
+    );
+    const caseInfo = caseResult.rows[0];
+
+    // Get requester information
+    const requesterResult = await query(
+      `SELECT first_name, last_name FROM auth_schema.users WHERE id = $1`,
+      [data.requestedBy]
+    );
+    const requester = requesterResult.rows[0];
+
+    // Count the number of changes
+    const changeCount = Object.keys(data.requestedChanges).length;
+    const changeFields = Object.keys(data.requestedChanges).slice(0, 3).join(', ');
+    const changeSummary = changeCount > 3 ? `${changeFields} and ${changeCount - 3} more` : changeFields;
+
+    // Create a notification for the approver
+    await query(
+      `INSERT INTO crm_schema.case_notifications 
+       (case_id, scheduled_for, scheduled_by, message, scheduled_at, status, change_request_id)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'PENDING', $5)`,
+      [
+        data.caseId,
+        data.requestedFor,
+        data.requestedBy,
+        `Change request from ${requester.first_name} ${requester.last_name} for case ${caseInfo.case_number}: ${changeSummary}`,
+        changeRequest.id
+      ]
+    );
+
+    return changeRequest;
+  }
+
+  /**
+   * Get change requests for a case
+   */
+  static async getCustomerDetailChangeRequests(caseId: string): Promise<any[]> {
+    const result = await query(
+      `SELECT 
+        cr.*,
+        u1.first_name as requested_by_first_name,
+        u1.last_name as requested_by_last_name,
+        u1.email as requested_by_email,
+        u2.first_name as requested_for_first_name,
+        u2.last_name as requested_for_last_name,
+        u2.email as requested_for_email,
+        u3.first_name as approved_by_first_name,
+        u3.last_name as approved_by_last_name,
+        u3.email as approved_by_email
+       FROM crm_schema.customer_detail_change_requests cr
+       LEFT JOIN auth_schema.users u1 ON cr.requested_by = u1.id
+       LEFT JOIN auth_schema.users u2 ON cr.requested_for = u2.id
+       LEFT JOIN auth_schema.users u3 ON cr.approved_by = u3.id
+       WHERE cr.case_id = $1
+       ORDER BY cr.created_at DESC`,
+      [caseId]
+    );
+
+    return result.rows.map(row => ({
+      id: row.id,
+      case_id: row.case_id,
+      requested_by: {
+        id: row.requested_by,
+        first_name: row.requested_by_first_name,
+        last_name: row.requested_by_last_name,
+        email: row.requested_by_email,
+      },
+      requested_for: {
+        id: row.requested_for,
+        first_name: row.requested_for_first_name,
+        last_name: row.requested_for_last_name,
+        email: row.requested_for_email,
+      },
+      requested_changes: row.requested_changes,
+      status: row.status,
+      approval_remarks: row.approval_remarks,
+      approved_by: row.approved_by ? {
+        id: row.approved_by,
+        first_name: row.approved_by_first_name,
+        last_name: row.approved_by_last_name,
+        email: row.approved_by_email,
+      } : null,
+      approved_at: row.approved_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  }
+
+  /**
+   * Get pending change requests for a user (where they are the approver)
+   */
+  static async getPendingChangeRequestsForUser(userId: string): Promise<any[]> {
+    const result = await query(
+      `SELECT 
+        cr.*,
+        c.case_number,
+        c.customer_name,
+        u1.first_name as requested_by_first_name,
+        u1.last_name as requested_by_last_name,
+        u1.email as requested_by_email
+       FROM crm_schema.customer_detail_change_requests cr
+       JOIN crm_schema.cases c ON cr.case_id = c.id
+       LEFT JOIN auth_schema.users u1 ON cr.requested_by = u1.id
+       WHERE cr.requested_for = $1 AND cr.status = 'PENDING'
+       ORDER BY cr.created_at DESC`,
+      [userId]
+    );
+
+    return result.rows.map(row => ({
+      id: row.id,
+      case_id: row.case_id,
+      case_number: row.case_number,
+      customer_name: row.customer_name,
+      requested_by: {
+        id: row.requested_by,
+        first_name: row.requested_by_first_name,
+        last_name: row.requested_by_last_name,
+        email: row.requested_by_email,
+      },
+      requested_changes: row.requested_changes,
+      status: row.status,
+      created_at: row.created_at,
+    }));
+  }
+
+  /**
+   * Approve a change request
+   */
+  static async approveCustomerDetailChangeRequest(
+    requestId: string,
+    approverId: string,
+    remarks?: string
+  ): Promise<any> {
+    // Get the request
+    const requestResult = await query(
+      `SELECT * FROM crm_schema.customer_detail_change_requests WHERE id = $1`,
+      [requestId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      throw new Error('Change request not found');
+    }
+
+    const request = requestResult.rows[0];
+
+    if (request.status !== 'PENDING') {
+      throw new Error('Change request is not pending');
+    }
+
+    if (request.requested_for !== approverId) {
+      throw new Error('You are not authorized to approve this request');
+    }
+
+    // Update the request status
+    const updateResult = await query(
+      `UPDATE crm_schema.customer_detail_change_requests 
+       SET status = 'APPROVED',
+           approved_by = $1,
+           approved_at = CURRENT_TIMESTAMP,
+           approval_remarks = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [approverId, remarks || null, requestId]
+    );
+
+    // Apply the changes
+    const changes = request.requested_changes;
+    
+    // Separate case fields from customer detail sheet fields
+    const caseFields = ['customer_name', 'customer_email', 'customer_phone', 'loan_type', 'loan_amount', 'source_type'];
+    const caseChanges: Record<string, any> = {};
+    const detailSheetChanges: Record<string, any> = {};
+    
+    Object.keys(changes).forEach(key => {
+      if (caseFields.includes(key)) {
+        caseChanges[key] = changes[key];
+      } else {
+        detailSheetChanges[key] = changes[key];
+      }
+    });
+
+    // Update case fields if any
+    if (Object.keys(caseChanges).length > 0) {
+      const updateFields: string[] = [];
+      const updateValues: any[] = [];
+      let paramIndex = 1;
+
+      if (caseChanges.customer_name !== undefined) {
+        updateFields.push(`customer_name = $${paramIndex++}`);
+        updateValues.push(caseChanges.customer_name);
+      }
+      if (caseChanges.customer_email !== undefined) {
+        updateFields.push(`customer_email = $${paramIndex++}`);
+        updateValues.push(caseChanges.customer_email);
+      }
+      if (caseChanges.customer_phone !== undefined) {
+        updateFields.push(`customer_phone = $${paramIndex++}`);
+        updateValues.push(caseChanges.customer_phone);
+      }
+      if (caseChanges.loan_type !== undefined) {
+        updateFields.push(`loan_type = $${paramIndex++}`);
+        updateValues.push(caseChanges.loan_type);
+      }
+      if (caseChanges.loan_amount !== undefined) {
+        updateFields.push(`loan_amount = $${paramIndex++}`);
+        updateValues.push(caseChanges.loan_amount);
+      }
+      if (caseChanges.source_type !== undefined) {
+        updateFields.push(`source_type = $${paramIndex++}`);
+        updateValues.push(caseChanges.source_type);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(request.case_id);
+        await query(
+          `UPDATE crm_schema.cases 
+           SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $${paramIndex}`,
+          updateValues
+        );
+      }
+    }
+
+    // Update customer detail sheet if there are detail sheet changes
+    if (Object.keys(detailSheetChanges).length > 0) {
+      const detailSheetResult = await query(
+        `SELECT * FROM crm_schema.customer_detail_sheets WHERE case_id = $1`,
+        [request.case_id]
+      );
+
+      if (detailSheetResult.rows.length > 0) {
+        const currentData = detailSheetResult.rows[0].detail_data;
+        const updatedData = { ...currentData, ...detailSheetChanges };
+
+        await query(
+          `UPDATE crm_schema.customer_detail_sheets 
+           SET detail_data = $1, updated_at = CURRENT_TIMESTAMP
+           WHERE case_id = $2`,
+          [JSON.stringify(updatedData), request.case_id]
+        );
+      } else {
+        // Create new detail sheet if it doesn't exist
+        await query(
+          `INSERT INTO crm_schema.customer_detail_sheets 
+           (case_id, detail_data, uploaded_by)
+           VALUES ($1, $2, $3)`,
+          [request.case_id, JSON.stringify(detailSheetChanges), approverId]
+        );
+      }
+    }
+
+    return updateResult.rows[0];
+  }
+
+  /**
+   * Reject a change request
+   */
+  static async rejectCustomerDetailChangeRequest(
+    requestId: string,
+    approverId: string,
+    remarks?: string
+  ): Promise<any> {
+    // Get the request
+    const requestResult = await query(
+      `SELECT * FROM crm_schema.customer_detail_change_requests WHERE id = $1`,
+      [requestId]
+    );
+
+    if (requestResult.rows.length === 0) {
+      throw new Error('Change request not found');
+    }
+
+    const request = requestResult.rows[0];
+
+    if (request.status !== 'PENDING') {
+      throw new Error('Change request is not pending');
+    }
+
+    if (request.requested_for !== approverId) {
+      throw new Error('You are not authorized to reject this request');
+    }
+
+    // Update the request status
+    const result = await query(
+      `UPDATE crm_schema.customer_detail_change_requests 
+       SET status = 'REJECTED',
+           approved_by = $1,
+           approved_at = CURRENT_TIMESTAMP,
+           approval_remarks = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [approverId, remarks || null, requestId]
+    );
+
+    return result.rows[0];
+  }
+
+  /**
+   * Get users with modify permission (above in hierarchy)
+   */
+  static async getUsersWithModifyPermission(userId: string): Promise<User[]> {
+    // Get users above in hierarchy who have the modify permission
+    const scheduleableUsers = await this.getScheduleableUsers(userId);
+    const aboveUsers = scheduleableUsers.above;
+
+    // Filter users who have the modify permission
+    const usersWithPermission: User[] = [];
+    
+    for (const user of aboveUsers) {
+      const permissionResult = await query(
+        `SELECT 1 FROM auth_schema.user_roles ur
+         JOIN auth_schema.role_permissions rp ON ur.role_id = rp.role_id
+         JOIN auth_schema.permissions p ON rp.permission_id = p.id
+         WHERE ur.user_id = $1 AND p.name = 'crm.case.customer_details.modify'`,
+        [user.id]
+      );
+
+      if (permissionResult.rows.length > 0) {
+        usersWithPermission.push(user);
+      }
+    }
+
+    return usersWithPermission;
   }
 }
 

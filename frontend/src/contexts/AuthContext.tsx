@@ -22,16 +22,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const initAuth = async () => {
-      if (authService.isAuthenticated()) {
+      // First, try to load user from localStorage for immediate display
+      const storedUser = authService.getStoredUser();
+      if (storedUser) {
+        setUser(storedUser);
+      }
+
+      // Then verify with server if authenticated
+      // Check if we have either access token or refresh token
+      const hasAccessToken = authService.isAuthenticated();
+      const hasRefreshToken = typeof window !== 'undefined' && !!localStorage.getItem('refreshToken');
+      
+      if (hasAccessToken || hasRefreshToken) {
         try {
           const userData = await authService.getMe();
           setUser(userData);
           authService.storeUser(userData);
-        } catch (error) {
+        } catch (error: any) {
           console.error('Failed to fetch user data:', error);
-          await authService.logout();
+          // Only logout if it's not a network error and we don't have refresh token
+          // The API interceptor will handle token refresh automatically
+          if (error.response?.status === 401 && !hasRefreshToken) {
+            // No refresh token available, clear everything
+            setUser(null);
+            await authService.logout();
+          } else if (error.response?.status !== 401) {
+            // For non-401 errors, keep the stored user but don't logout
+            // This handles network errors gracefully
+            console.warn('Non-auth error during user fetch, keeping stored user');
+          }
+          // For 401 with refresh token, let the interceptor handle it
+        }
+      } else if (storedUser) {
+        // If not authenticated and no tokens, clear stored user
+        setUser(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('user');
         }
       }
+      
       setLoading(false);
     };
 
@@ -45,6 +74,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userData = await authService.getMe();
     setUser(userData);
     authService.storeUser(userData);
+    
+    // Wait a bit to ensure state is updated before navigation
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     router.push('/dashboard');
   };

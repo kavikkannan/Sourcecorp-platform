@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requirePermission } from '../middleware/rbac.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -9,9 +10,26 @@ import { TeamsController } from '../controllers/teams.controller';
 import { AnnouncementsController } from '../controllers/announcements.controller';
 import { AuditController } from '../controllers/audit.controller';
 import { HierarchyController } from '../controllers/hierarchy.controller';
+import { CRMController } from '../controllers/crm.controller';
 import * as validators from '../validators/admin.validator';
 
 const router = Router();
+
+// Configure multer for announcement image uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only image files
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  },
+});
 
 // All admin routes require authentication
 router.use(authenticateToken);
@@ -44,6 +62,13 @@ router.patch(
   requirePermission('admin.users.update'),
   validate(validators.updateUserSchema),
   UsersController.updateUser
+);
+
+router.delete(
+  '/users/:id',
+  requirePermission('admin.users.delete'),
+  validate(validators.userIdSchema),
+  UsersController.deleteUser
 );
 
 router.post(
@@ -205,6 +230,7 @@ router.delete(
 router.post(
   '/announcements',
   requirePermission('admin.announcements.create'),
+  upload.single('image'),
   validate(validators.createAnnouncementSchema),
   AnnouncementsController.createAnnouncement
 );
@@ -225,6 +251,7 @@ router.get(
 router.patch(
   '/announcements/:id',
   requirePermission('admin.announcements.update'),
+  upload.single('image'),
   validate(validators.updateAnnouncementSchema),
   AnnouncementsController.updateAnnouncement
 );
@@ -234,6 +261,13 @@ router.delete(
   requirePermission('admin.announcements.delete'),
   validate(validators.announcementIdSchema),
   AnnouncementsController.deleteAnnouncement
+);
+
+// Serve announcement images
+router.get(
+  '/announcements/:id/image',
+  authenticateToken,
+  AnnouncementsController.getAnnouncementImage
 );
 
 // ============================================
@@ -266,6 +300,21 @@ router.get(
   '/hierarchy/tree',
   requirePermission('admin.hierarchy.manage'),
   HierarchyController.getHierarchyTree
+);
+
+// ============================================
+// CUSTOMER DETAIL TEMPLATE MANAGEMENT
+// ============================================
+router.get(
+  '/customer-detail-template',
+  requirePermission('admin.users.read'),
+  CRMController.getCustomerDetailTemplate
+);
+
+router.post(
+  '/customer-detail-template',
+  requirePermission('admin.users.update'),
+  CRMController.updateCustomerDetailTemplate
 );
 
 export default router;

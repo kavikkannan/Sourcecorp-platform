@@ -149,6 +149,12 @@ const navSections: NavSection[] = [
         icon: FileSpreadsheet,
         permission: 'finance.template.manage',
       },
+      {
+        name: 'Customer Detail Template',
+        href: '/admin/templates/customer-detail',
+        icon: FileSpreadsheet,
+        permission: 'admin.users.read',
+      },
     ],
   },
   {
@@ -198,7 +204,7 @@ export default function Sidebar() {
       transition={{ duration: 0.2 }}
     >
       {/* Logo */}
-      <div className={`p-6 border-b border-gray-800 ${isCollapsed ? 'px-4' : ''}`}>
+      <div className={`border-b border-gray-800 ${isCollapsed ? 'p-4' : 'p-6'}`}>
         <AnimatePresence mode="wait">
           {isCollapsed ? (
             <motion.div
@@ -208,9 +214,17 @@ export default function Sidebar() {
               exit={{ opacity: 0 }}
               className="flex items-center justify-center"
             >
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">S</span>
-              </div>
+              <img 
+                src="/sourcecorp-logo.png" 
+                alt="Sourcecorp Logo" 
+                className="h-12 w-12 object-contain"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
+                onError={(e) => {
+                  // Fallback if image doesn't load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -218,9 +232,23 @@ export default function Sidebar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="flex items-center gap-3"
             >
-              <h1 className="text-xl font-bold tracking-tight">SourceCorp</h1>
-              <p className="text-xs text-gray-400 mt-1">Platform</p>
+              <img 
+                src="/sourcecorp-logo.png" 
+                alt="Sourcecorp Logo" 
+                className="h-12 w-12 object-contain flex-shrink-0"
+                style={{ maxWidth: '100%', maxHeight: '100%' }}
+                onError={(e) => {
+                  // Fallback if image doesn't load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold tracking-tight">Sourcecorp Solution</h1>
+                <p className="text-xs text-gray-400 mt-0.5">Platform</p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -335,35 +363,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      {/* Quick Actions */}
-      {!isCollapsed && (
-        <div className="border-t border-gray-800 bg-gray-800/30 p-4 space-y-2">
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-            Quick Actions
-          </h3>
-          <Link href="/tasks?action=create&type=personal">
-            <motion.div
-              whileHover={{ x: 2 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Quick Task</span>
-            </motion.div>
-          </Link>
-          <Link href="/notes?action=create">
-            <motion.div
-              whileHover={{ x: 2 }}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white rounded-lg transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Quick Note</span>
-            </motion.div>
-          </Link>
-        </div>
-      )}
 
       {/* User Section */}
       <div className={`border-t border-gray-800 bg-gray-800/50 ${isCollapsed ? 'p-2' : 'p-4'}`}>

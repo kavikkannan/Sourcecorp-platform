@@ -11,6 +11,7 @@ import Select from '@/components/Select';
 import { useAuth } from '@/contexts/AuthContext';
 import { financeService, downloadBlob, ObligationSheet, ObligationTemplate, ObligationField } from '@/lib/finance';
 import { crmService, Case } from '@/lib/crm';
+import { formatIndianNumber } from '@/utils/formatNumber';
 
 export default function ObligationPage() {
   const { hasPermission } = useAuth();
@@ -599,7 +600,7 @@ export default function ObligationPage() {
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 mb-1">Total Obligation</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  ₹{totalObligation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{formatIndianNumber(totalObligation, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -618,9 +619,10 @@ export default function ObligationPage() {
                     ? 'text-green-600'
                     : 'text-red-600'
                 }`}>
-                  ₹{(
-                    (parseFloat(netIncome) || 0) - totalObligation
-                  ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{formatIndianNumber(
+                    (parseFloat(netIncome) || 0) - totalObligation,
+                    { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                  )}
                 </p>
               </div>
             </div>

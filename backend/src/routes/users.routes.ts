@@ -12,6 +12,7 @@ router.use(authenticateToken);
 // ============================================
 router.get('/me/manager', HierarchyController.getMyManager);
 router.get('/me/subordinates', HierarchyController.getMySubordinates);
+router.get('/me/subordinates/all', HierarchyController.getAllMySubordinates);
 
 export default router;
 

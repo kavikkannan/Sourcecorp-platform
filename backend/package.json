@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc || true",
+    "build": "tsc || true && cp -r src/assets dist/ 2>/dev/null || true",
     "start": "node dist/index.js",
     "migrate": "ts-node src/db/migrate.ts",
     "migrate:hierarchy": "ts-node src/db/migrate-hierarchy.ts",
@@ -21,7 +21,20 @@
     "migrate:chat-permissions": "ts-node src/db/migrate-chat-permissions.ts",
     "migrate:initial-obligation-template": "ts-node src/db/migrate-initial-obligation-template.ts",
     "migrate:fix-obligation-items": "ts-node src/db/migrate-fix-obligation-items.ts",
-    "migrate:initial-cam-template": "ts-node src/db/migrate-initial-cam-template.ts"
+    "migrate:initial-cam-template": "ts-node src/db/migrate-initial-cam-template.ts",
+    "migrate:announcements-enhancements": "ts-node src/db/migrate-announcements-enhancements.ts",
+    "migrate:user-delete-permission": "ts-node src/db/migrate-user-delete-permission.ts",
+    "migrate:note-schedule-attachments": "ts-node src/db/migrate-add-note-schedule-attachments.ts",
+    "migrate:customer-detail-sheets": "ts-node src/db/migrate-customer-detail-sheets.ts",
+    "migrate:add-sales-report-category": "ts-node src/db/migrate-add-sales-report-category.ts",
+    "migrate:add-assign-permission-to-admin": "ts-node src/db/migrate-add-assign-permission-to-admin.ts",
+    "migrate:add-delete-permission-to-admin": "ts-node src/db/migrate-add-delete-permission-to-admin.ts",
+    "migrate:add-chat-delete-group-permissions": "ts-node src/db/migrate-add-chat-delete-group-permissions.ts",
+    "migrate:update-case-number-format": "ts-node src/db/migrate-update-case-number-format.ts",
+    "migrate:customer-detail-permissions": "ts-node src/db/migrate-customer-detail-permissions.ts",
+    "migrate:customer-detail-change-requests": "ts-node src/db/migrate-customer-detail-change-requests.ts",
+    "migrate:link-change-requests-to-notifications": "ts-node src/db/migrate-link-change-requests-to-notifications.ts",
+    "migrate:error-logs": "ts-node src/db/migrate-add-error-logs-table.ts"
   },
   "dependencies": {
     "express": "^4.18.2",

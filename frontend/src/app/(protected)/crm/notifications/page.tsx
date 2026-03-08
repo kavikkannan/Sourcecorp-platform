@@ -11,10 +11,12 @@ import {
   EyeOff,
   Filter,
   X,
+  Calendar,
 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Select from '@/components/Select';
+import Input from '@/components/Input';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   crmService,
@@ -35,6 +37,8 @@ export default function NotificationsPage() {
   // Filters
   const [isReadFilter, setIsReadFilter] = useState<boolean | undefined>(undefined);
   const [completionFilter, setCompletionFilter] = useState<'ONGOING' | 'COMPLETED' | undefined>(undefined);
+  const [dueDateFrom, setDueDateFrom] = useState<string>('');
+  const [dueDateTo, setDueDateTo] = useState<string>('');
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
 
@@ -45,6 +49,8 @@ export default function NotificationsPage() {
         crmService.getUserNotifications({
           is_read: isReadFilter,
           completion_status: completionFilter,
+          due_date_from: dueDateFrom || undefined,
+          due_date_to: dueDateTo || undefined,
           limit,
           offset,
         }),
@@ -60,7 +66,7 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [isReadFilter, completionFilter, limit, offset]);
+  }, [isReadFilter, completionFilter, dueDateFrom, dueDateTo, limit, offset]);
 
   useEffect(() => {
     loadNotifications();
@@ -90,9 +96,39 @@ export default function NotificationsPage() {
     router.push(`/crm/cases/${caseId}`);
   };
 
+  const handleApproveChangeRequest = async (changeRequestId: string, notificationId: string) => {
+    if (!confirm('Are you sure you want to approve this change request?')) {
+      return;
+    }
+    try {
+      await crmService.approveCustomerDetailChangeRequest(changeRequestId);
+      alert('Change request approved successfully');
+      await loadNotifications();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to approve change request');
+    }
+  };
+
+  const handleRejectChangeRequest = async (changeRequestId: string, notificationId: string) => {
+    const remarks = prompt('Please provide a reason for rejection:');
+    if (!remarks || !remarks.trim()) {
+      alert('Rejection reason is required');
+      return;
+    }
+    try {
+      await crmService.rejectCustomerDetailChangeRequest(changeRequestId, remarks);
+      alert('Change request rejected');
+      await loadNotifications();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to reject change request');
+    }
+  };
+
   const clearFilters = () => {
     setIsReadFilter(undefined);
     setCompletionFilter(undefined);
+    setDueDateFrom('');
+    setDueDateTo('');
     setOffset(0);
   };
 
@@ -142,7 +178,32 @@ export default function NotificationsPage() {
               className="w-40"
             />
 
-            {(isReadFilter !== undefined || completionFilter) && (
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <Input
+                type="date"
+                value={dueDateFrom}
+                onChange={(e) => {
+                  setDueDateFrom(e.target.value);
+                  setOffset(0);
+                }}
+                placeholder="From Date"
+                className="w-40"
+              />
+              <span className="text-gray-400">to</span>
+              <Input
+                type="date"
+                value={dueDateTo}
+                onChange={(e) => {
+                  setDueDateTo(e.target.value);
+                  setOffset(0);
+                }}
+                placeholder="To Date"
+                className="w-40"
+              />
+            </div>
+
+            {(isReadFilter !== undefined || completionFilter || dueDateFrom || dueDateTo) && (
               <Button variant="secondary" onClick={clearFilters} className="ml-auto">
                 <X className="w-4 h-4 mr-2" />
                 Clear Filters
@@ -256,6 +317,54 @@ export default function NotificationsPage() {
                           {notification.status}
                         </span>
                       </div>
+
+                      {/* Change Request Actions */}
+                      {notification.change_request_id && notification.change_request_status === 'PENDING' && (
+                        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <p className="text-sm font-semibold text-yellow-900 mb-2">Change Request Pending Approval</p>
+                          {notification.change_request_changes && (
+                            <div className="text-xs text-yellow-800 mb-3">
+                              <p className="font-medium mb-1">Requested Changes:</p>
+                              <ul className="list-disc list-inside space-y-1">
+                                {Object.entries(notification.change_request_changes).map(([key, value]) => (
+                                  <li key={key}>
+                                    <span className="font-medium">{key.replace(/_/g, ' ')}:</span> {String(value)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleApproveChangeRequest(notification.change_request_id!, notification.id)}
+                              className="text-sm bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleRejectChangeRequest(notification.change_request_id!, notification.id)}
+                              className="text-sm text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {notification.change_request_id && notification.change_request_status === 'APPROVED' && (
+                        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <p className="text-sm font-semibold text-green-900">✓ Change Request Approved</p>
+                        </div>
+                      )}
+
+                      {notification.change_request_id && notification.change_request_status === 'REJECTED' && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-semibold text-red-900">✗ Change Request Rejected</p>
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-2 flex-wrap">
                         <Button

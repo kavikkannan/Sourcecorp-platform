@@ -32,6 +32,7 @@ export const caseIdSchema = z.object({
 export const getCasesSchema = z.object({
   query: z.object({
     status: z.string().optional(),
+    view_type: z.enum(['individual', 'team']).optional(),
     limit: z.string().regex(/^\d+$/).optional(),
     offset: z.string().regex(/^\d+$/).optional(),
   }),
@@ -55,14 +56,13 @@ export const updateStatusSchema = z.object({
   body: z.object({
     new_status: z.enum([
       'NEW',
-      'ASSIGNED',
-      'IN_PROGRESS',
-      'PENDING_DOCUMENTS',
-      'UNDER_REVIEW',
-      'APPROVED',
-      'REJECTED',
+      'LOGIN',
+      'SALES_REWORK',
+      'CREDIT_REWORK',
+      'CREDIT_UNDERWRITING',
+      'CREDIT_APPROVED',
       'DISBURSED',
-      'CLOSED',
+      'REJECTED',
     ], {
       errorMap: () => ({ message: 'Invalid status' }),
     }),
@@ -134,6 +134,8 @@ export const getUserNotificationsSchema = z.object({
   query: z.object({
     is_read: z.string().optional(),
     completion_status: z.enum(['ONGOING', 'COMPLETED']).optional(),
+    due_date_from: z.string().optional(),
+    due_date_to: z.string().optional(),
     limit: z.string().regex(/^\d+$/).optional(),
     offset: z.string().regex(/^\d+$/).optional(),
   }),

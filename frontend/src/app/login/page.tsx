@@ -35,7 +35,20 @@ export default function LoginPage() {
         className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">SourceCorp</h1>
+          <div className="flex justify-center mb-6">
+            <img 
+              src="/sourcecorp-logo.png" 
+              alt="Sourcecorp Logo" 
+              className="h-20 w-20 object-contain"
+              style={{ maxWidth: '100%', height: 'auto' }}
+              onError={(e) => {
+                // Fallback if image doesn't load
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
+            />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900">Sourcecorp Solution</h1>
           <p className="text-gray-600 mt-2">Sign in to your account</p>
         </div>
 
@@ -100,7 +113,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-8 text-center text-sm text-gray-600">
-          <p>Protected by SourceCorp Security</p>
+          <p>Protected by Sourcecorp Solution Security</p>
         </div>
       </motion.div>
     </div>
