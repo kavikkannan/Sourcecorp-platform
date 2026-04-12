@@ -123,6 +123,7 @@ export default function ObligationPage() {
     } finally {
       loadingRef.current = false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCase, loadTemplate]);
 
   useEffect(() => {

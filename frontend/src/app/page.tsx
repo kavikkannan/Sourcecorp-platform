@@ -347,12 +347,12 @@ export default function MaintenancePage() {
 
           {/* Heading */}
           <h1 className="heading">
-            We're <span>upgrading</span><br />for you
+            We&apos;re <span>upgrading</span><br />for you
           </h1>
 
           <p className="subtitle">
             Our platform is currently undergoing scheduled maintenance
-            to deliver a better experience. We'll be back shortly.
+            to deliver a better experience. We&apos;ll be back shortly.
           </p>
 
           {/* Progress */}
