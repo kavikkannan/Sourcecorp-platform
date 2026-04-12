@@ -28,30 +28,32 @@ export interface LoginResponse {
 
 export const authService = {
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
-    const response = await api.post('/auth/login', credentials);
+    const response = await api.post('/auth/login', credentials, {
+      withCredentials: true,
+    });
     return response.data;
   },
 
   async logout(): Promise<void> {
     try {
-      await api.post('/auth/logout');
+      await api.post('/auth/logout', {}, { withCredentials: true });
     } finally {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
       }
     }
   },
 
   async getMe(): Promise<User> {
-    const response = await api.get('/auth/me');
+    const response = await api.get('/auth/me', { withCredentials: true });
     return response.data;
   },
 
   isAuthenticated(): boolean {
+    // With httpOnly cookies, we can't check for token existence client-side
+    // Instead, we check if we have a user stored or make an API call
     if (typeof window !== 'undefined') {
-      return !!localStorage.getItem('accessToken');
+      return !!localStorage.getItem('user');
     }
     return false;
   },
@@ -70,11 +72,9 @@ export const authService = {
     return null;
   },
 
-  storeTokens(accessToken: string, refreshToken: string): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
-    }
+  storeTokens(_accessToken: string, _refreshToken: string): void {
+    // Tokens are now stored in httpOnly cookies by the server
+    // This method is kept for backward compatibility but does nothing
   },
 
   storeUser(user: User): void {

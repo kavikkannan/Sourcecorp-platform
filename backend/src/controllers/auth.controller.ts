@@ -9,6 +9,7 @@ import {
 } from '../utils/jwt';
 import { redisClient } from '../db/redis';
 import { AuditService } from '../services/audit.service';
+import { config } from '../config/env';
 
 export class AuthController {
   static async login(req: AuthRequest, res: Response) {
@@ -45,7 +46,7 @@ export class AuthController {
       const refreshToken = generateRefreshToken(payload);
 
       // Store refresh token in Redis with expiry
-      await redisClient.setEx(
+      await redisClient.setex(
         `refresh_token:${user.id}`,
         7 * 24 * 60 * 60, // 7 days
         refreshToken
@@ -61,16 +62,32 @@ export class AuthController {
         userAgent: req.headers['user-agent'],
       });
 
-      res.json({
-        accessToken,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-        },
-      });
+      // Set httpOnly cookies for security (prevents XSS attacks)
+      const isProduction = config.nodeEnv === 'production';
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict' as const,
+        maxAge: 15 * 60 * 1000, // 15 minutes for access token
+      };
+      const refreshCookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict' as const,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days for refresh token
+      };
+
+      res
+        .cookie('accessToken', accessToken, cookieOptions)
+        .cookie('refreshToken', refreshToken, refreshCookieOptions)
+        .json({
+          user: {
+            id: user.id,
+            email: user.email,
+            firstName: user.first_name,
+            lastName: user.last_name,
+          },
+        });
     } catch (error) {
       throw error;
     }
@@ -78,7 +95,12 @@ export class AuthController {
 
   static async refresh(req: AuthRequest, res: Response) {
     try {
-      const { refreshToken } = req.body;
+      // Try to get refresh token from cookie first, then body
+      let refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Refresh token required' });
+      }
 
       // Verify refresh token
       const payload = verifyRefreshToken(refreshToken);
@@ -105,16 +127,31 @@ export class AuthController {
       const newRefreshToken = generateRefreshToken(newPayload);
 
       // Update refresh token in Redis
-      await redisClient.setEx(
+      await redisClient.setex(
         `refresh_token:${payload.userId}`,
         7 * 24 * 60 * 60,
         newRefreshToken
       );
 
-      res.json({
-        accessToken,
-        refreshToken: newRefreshToken,
-      });
+      // Set new httpOnly cookies
+      const isProduction = config.nodeEnv === 'production';
+      const cookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict' as const,
+        maxAge: 15 * 60 * 1000, // 15 minutes
+      };
+      const refreshCookieOptions = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict' as const,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      };
+
+      res
+        .cookie('accessToken', accessToken, cookieOptions)
+        .cookie('refreshToken', newRefreshToken, refreshCookieOptions)
+        .json({ message: 'Token refreshed' });
     } catch (error) {
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
@@ -139,7 +176,11 @@ export class AuthController {
         userAgent: req.headers['user-agent'],
       });
 
-      res.json({ message: 'Logged out successfully' });
+      // Clear httpOnly cookies
+      res
+        .clearCookie('accessToken')
+        .clearCookie('refreshToken')
+        .json({ message: 'Logged out successfully' });
     } catch (error) {
       throw error;
     }

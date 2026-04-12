@@ -3,12 +3,8 @@ import { config } from './config/env';
 import { logger } from './config/logger';
 import { pool } from './db/pool';
 import { connectRedis, redisClient } from './db/redis';
-import { createServer } from 'http';
-import { WebSocketService } from './services/websocket.service';
-import { setWebSocketService } from './controllers/chat.controller';
-import './workers/export.worker';
 
-let webSocketService: WebSocketService;
+import './workers/export.worker';
 
 const startServer = async () => {
   try {
@@ -19,16 +15,8 @@ const startServer = async () => {
     // Connect to Redis
     await connectRedis();
 
-    // Create HTTP server
-    const httpServer = createServer(app);
-
-    // Initialize WebSocket service
-    webSocketService = new WebSocketService(httpServer);
-    setWebSocketService(webSocketService);
-    logger.info('WebSocket service initialized');
-
     // Start server
-    httpServer.listen(config.port, () => {
+    app.listen(config.port, () => {
       logger.info(`Server started on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
     });
@@ -43,9 +31,6 @@ const shutdown = async () => {
   logger.info('Shutting down gracefully...');
 
   try {
-    if (webSocketService) {
-      webSocketService.getIO().close();
-    }
     await pool.end();
     await redisClient.quit();
     logger.info('Connections closed');

@@ -1,11 +1,13 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis';
 import { config } from '../config/env';
 import { logger } from '../config/logger';
 
-export const redisClient = createClient({
-  socket: {
-    host: config.redis.host,
-    port: config.redis.port,
+export const redisClient = new Redis({
+  host: config.redis.host,
+  port: config.redis.port,
+  retryStrategy: (times) => {
+    const delay = Math.min(times * 50, 2000);
+    return delay;
   },
 });
 
@@ -18,11 +20,12 @@ redisClient.on('connect', () => {
 });
 
 export const connectRedis = async () => {
+  // ioredis connects automatically, but we can verify connection
   try {
-    await redisClient.connect();
+    await redisClient.ping();
+    logger.info('Redis connection verified');
   } catch (error) {
     logger.error('Failed to connect to Redis', error);
     throw error;
   }
 };
-

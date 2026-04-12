@@ -25,7 +25,6 @@ import {
   StickyNote,
   Plus,
   ListTodo,
-  MessageSquare,
 } from 'lucide-react';
 
 interface NavItem {
@@ -49,12 +48,6 @@ const navSections: NavSection[] = [
         href: '/dashboard',
         icon: LayoutDashboard,
         permission: '', // No permission required - all authenticated users can access
-      },
-      {
-        name: 'Chat',
-        href: '/chat',
-        icon: MessageSquare,
-        permission: 'chat.channel.view',
       },
     ],
   },

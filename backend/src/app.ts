@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { config } from './config/env';
 import { errorHandler } from './middleware/error.middleware';
 import authRoutes from './routes/auth.routes';
@@ -11,13 +12,14 @@ import templateRoutes from './routes/template.routes';
 import usersRoutes from './routes/users.routes';
 import tasksRoutes from './routes/tasks.routes';
 import notesRoutes from './routes/notes.routes';
-import chatRoutes from './routes/chat.routes';
+
 import { AnnouncementsController } from './controllers/announcements.controller';
 
 const app = express();
 
 // Security middleware
 app.use(helmet());
+app.use(cookieParser());
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -63,7 +65,7 @@ app.use('/api/finance/templates', templateRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/notes', notesRoutes);
-app.use('/api/chat', chatRoutes);
+
 
 // 404 handler
 app.use((req, res) => {

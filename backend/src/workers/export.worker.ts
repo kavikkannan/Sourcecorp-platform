@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, Queue } from 'bullmq';
 import { config } from '../config/env';
 import { logger } from '../config/logger';
 import { ExportService } from '../services/export.service';
@@ -33,8 +33,28 @@ export const exportWorker = new Worker(
             throw error;
         }
     },
-    { connection }
+    { 
+        connection,
+        limiter: {
+            max: 5,
+            duration: 1000,
+        },
+    }
 );
+
+// Add default job options with retry limits to prevent infinite loops
+export const exportQueueWithOptions = new Queue('case_export_queue', { 
+    connection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 5000,
+        },
+        removeOnComplete: 10,
+        removeOnFail: 5,
+    }
+});
 
 exportWorker.on('completed', (job) => {
     logger.info(`Job ${job.id} has completed!`);

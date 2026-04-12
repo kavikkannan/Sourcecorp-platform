@@ -7,7 +7,18 @@ const connection = {
     port: config.redis.port,
 };
 
-export const exportQueue = new Queue('case_export_queue', { connection });
+export const exportQueue = new Queue('case_export_queue', { 
+    connection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 5000,
+        },
+        removeOnComplete: 10,
+        removeOnFail: 5,
+    }
+});
 
 export interface ExportJobData {
     userId: string;

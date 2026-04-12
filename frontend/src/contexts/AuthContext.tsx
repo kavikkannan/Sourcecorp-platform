@@ -28,37 +28,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(storedUser);
       }
 
-      // Then verify with server if authenticated
-      // Check if we have either access token or refresh token
-      const hasAccessToken = authService.isAuthenticated();
-      const hasRefreshToken = typeof window !== 'undefined' && !!localStorage.getItem('refreshToken');
-      
-      if (hasAccessToken || hasRefreshToken) {
-        try {
-          const userData = await authService.getMe();
-          setUser(userData);
-          authService.storeUser(userData);
-        } catch (error: any) {
-          console.error('Failed to fetch user data:', error);
-          // Only logout if it's not a network error and we don't have refresh token
-          // The API interceptor will handle token refresh automatically
-          if (error.response?.status === 401 && !hasRefreshToken) {
-            // No refresh token available, clear everything
-            setUser(null);
-            await authService.logout();
-          } else if (error.response?.status !== 401) {
-            // For non-401 errors, keep the stored user but don't logout
-            // This handles network errors gracefully
-            console.warn('Non-auth error during user fetch, keeping stored user');
+      // Verify with server using httpOnly cookies
+      try {
+        const userData = await authService.getMe();
+        setUser(userData);
+        authService.storeUser(userData);
+      } catch (error: any) {
+        console.error('Failed to fetch user data:', error);
+        // If 401, user is not authenticated
+        if (error.response?.status === 401) {
+          setUser(null);
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('user');
           }
-          // For 401 with refresh token, let the interceptor handle it
         }
-      } else if (storedUser) {
-        // If not authenticated and no tokens, clear stored user
-        setUser(null);
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('user');
-        }
+        // For other errors, keep the stored user for better UX
       }
       
       setLoading(false);
@@ -68,8 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
-    const response = await authService.login(credentials);
-    authService.storeTokens(response.accessToken, response.refreshToken);
+    await authService.login(credentials);
     
     const userData = await authService.getMe();
     setUser(userData);
