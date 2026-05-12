@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
+import Button from '@/components/Button';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -37,6 +38,19 @@ interface Announcement {
   category: 'GENERAL' | 'BANK_UPDATES' | 'SALES_REPORT';
   image_path?: string | null;
   author_name: string;
+  created_at: string;
+}
+
+interface Recognition {
+  id: string;
+  type: 'MONTHLY_ACHIEVER' | 'BEST_EMPLOYEE';
+  employee_name: string;
+  employee_email: string | null;
+  designation: string | null;
+  month: string;
+  description: string | null;
+  image_path: string | null;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -77,6 +91,7 @@ export default function DashboardPage() {
   const [allCases, setAllCases] = useState<Case[]>([]);
   const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
   const [upcomingNotifications, setUpcomingNotifications] = useState<CaseNotification[]>([]);
+  const [recognitions, setRecognitions] = useState<Recognition[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentAnnouncementIndex, setCurrentAnnouncementIndex] = useState(0);
 
@@ -239,6 +254,20 @@ export default function DashboardPage() {
           })
           .catch(() => {
             setUpcomingNotifications([]);
+            return { success: false };
+          })
+      );
+
+      // Load recognitions
+      promises.push(
+        api.get('/admin/recognitions', { params: { activeOnly: 'true' } })
+          .then((res) => {
+            const data = Array.isArray(res.data) ? res.data : [];
+            setRecognitions(data.filter((r: Recognition) => r.is_active));
+            return { success: true };
+          })
+          .catch(() => {
+            setRecognitions([]);
             return { success: false };
           })
       );
@@ -719,35 +748,73 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Topper & Best Employee Section */}
+      {/* Recognition & Achievements Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-4">
           <Award className="w-5 h-5 text-yellow-600" />
           <h2 className="text-lg font-semibold text-gray-900">Recognition & Achievements</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Topper of the Month */}
+          {/* Monthly Achiever */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg p-4 border-2 border-yellow-200 hover:shadow-lg transition-shadow"
+            className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg p-4 border-2 border-yellow-200 hover:shadow-lg transition-shadow min-h-[280px]"
           >
             <div className="flex items-center gap-2 mb-3">
               <Award className="w-5 h-5 text-yellow-600" />
-              <h3 className="text-base font-semibold text-gray-900">Topper of the Month</h3>
+              <h3 className="text-base font-semibold text-gray-900">Monthly Achiever</h3>
             </div>
-            <div className="relative w-full h-auto rounded-lg overflow-hidden bg-white shadow-md">
-              <img
-                src="/topperBestEmployee/Topper of the month (1)_260106_235918_2.jpeg"
-                alt="Topper of the Month"
-                className="w-full h-auto object-contain rounded-lg"
-                onError={(e) => {
-                  console.error('Failed to load Topper of the Month image');
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </div>
+            {(() => {
+              const achiever = recognitions
+                .filter((r) => r.type === 'MONTHLY_ACHIEVER')
+                .sort((a, b) => b.month.localeCompare(a.month))[0];
+              if (achiever) {
+                return (
+                  <div className="space-y-3">
+                    {achiever.image_path ? (
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden bg-white shadow-md">
+                        <img
+                          src={`${API_URL.replace('/api', '')}/api/recognitions/${achiever.id}/image`}
+                          alt={achiever.employee_name}
+                          className="w-full h-full object-cover rounded-lg"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-48 rounded-lg bg-yellow-100 flex items-center justify-center">
+                        <Award className="w-16 h-16 text-yellow-400" />
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-gray-900">{achiever.employee_name}</div>
+                      {achiever.designation && <div className="text-sm text-gray-600">{achiever.designation}</div>}
+                      <div className="text-xs text-gray-500 mt-1">{achiever.month}</div>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="flex flex-col items-center justify-center h-[220px] border-2 border-dashed border-yellow-300 rounded-lg">
+                  {hasPermission('admin.recognitions.create') ? (
+                    <>
+                      <Award className="w-10 h-10 text-yellow-400 mb-3" />
+                      <p className="text-sm text-gray-500 mb-3">No Monthly Achiever set</p>
+                      <Button
+                        variant="secondary"
+                        className="text-xs px-4 py-2"
+                        onClick={() => router.push('/admin/recognitions')}
+                      >
+                        Add Monthly Achiever
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-400">No recognition set for this month</p>
+                  )}
+                </div>
+              );
+            })()}
           </motion.div>
 
           {/* Best Employee */}
@@ -755,23 +822,61 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border-2 border-blue-200 hover:shadow-lg transition-shadow"
+            className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border-2 border-blue-200 hover:shadow-lg transition-shadow min-h-[280px]"
           >
             <div className="flex items-center gap-2 mb-3">
               <Award className="w-5 h-5 text-blue-600" />
               <h3 className="text-base font-semibold text-gray-900">Best Employee</h3>
             </div>
-            <div className="relative w-full h-auto rounded-lg overflow-hidden bg-white shadow-md">
-              <img
-                src="/topperBestEmployee/Best Employee (1)_260106_235918_1.jpeg"
-                alt="Best Employee"
-                className="w-full h-auto object-contain rounded-lg"
-                onError={(e) => {
-                  console.error('Failed to load Best Employee image');
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </div>
+            {(() => {
+              const bestEmp = recognitions
+                .filter((r) => r.type === 'BEST_EMPLOYEE')
+                .sort((a, b) => b.month.localeCompare(a.month))[0];
+              if (bestEmp) {
+                return (
+                  <div className="space-y-3">
+                    {bestEmp.image_path ? (
+                      <div className="relative w-full h-48 rounded-lg overflow-hidden bg-white shadow-md">
+                        <img
+                          src={`${API_URL.replace('/api', '')}/api/recognitions/${bestEmp.id}/image`}
+                          alt={bestEmp.employee_name}
+                          className="w-full h-full object-cover rounded-lg"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-48 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <Award className="w-16 h-16 text-blue-400" />
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-gray-900">{bestEmp.employee_name}</div>
+                      {bestEmp.designation && <div className="text-sm text-gray-600">{bestEmp.designation}</div>}
+                      <div className="text-xs text-gray-500 mt-1">{bestEmp.month}</div>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="flex flex-col items-center justify-center h-[220px] border-2 border-dashed border-blue-300 rounded-lg">
+                  {hasPermission('admin.recognitions.create') ? (
+                    <>
+                      <Award className="w-10 h-10 text-blue-400 mb-3" />
+                      <p className="text-sm text-gray-500 mb-3">No Best Employee set</p>
+                      <Button
+                        variant="secondary"
+                        className="text-xs px-4 py-2"
+                        onClick={() => router.push('/admin/recognitions')}
+                      >
+                        Add Best Employee
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-400">No recognition set for this month</p>
+                  )}
+                </div>
+              );
+            })()}
           </motion.div>
         </div>
       </div>

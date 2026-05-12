@@ -10,6 +10,7 @@ import { TeamsController } from '../controllers/teams.controller';
 import { AnnouncementsController } from '../controllers/announcements.controller';
 import { AuditController } from '../controllers/audit.controller';
 import { HierarchyController } from '../controllers/hierarchy.controller';
+import { RecognitionsController } from '../controllers/recognitions.controller';
 import { CRMController } from '../controllers/crm.controller';
 import * as validators from '../validators/admin.validator';
 
@@ -321,6 +322,45 @@ router.get(
   requirePermission('admin.hierarchy.manage'),
   validate(validators.hierarchyHistorySchema),
   HierarchyController.getHierarchyHistory
+);
+
+// ============================================
+// RECOGNITIONS MANAGEMENT
+// ============================================
+router.post(
+  '/recognitions',
+  requirePermission('admin.recognitions.create'),
+  upload.single('image'),
+  validate(validators.createRecognitionSchema),
+  RecognitionsController.createRecognition
+);
+
+router.get(
+  '/recognitions',
+  requirePermission('admin.recognitions.read'),
+  RecognitionsController.getRecognitions
+);
+
+router.get(
+  '/recognitions/:id',
+  requirePermission('admin.recognitions.read'),
+  validate(validators.recognitionIdSchema),
+  RecognitionsController.getRecognition
+);
+
+router.patch(
+  '/recognitions/:id',
+  requirePermission('admin.recognitions.update'),
+  upload.single('image'),
+  validate(validators.updateRecognitionSchema),
+  RecognitionsController.updateRecognition
+);
+
+router.delete(
+  '/recognitions/:id',
+  requirePermission('admin.recognitions.delete'),
+  validate(validators.recognitionIdSchema),
+  RecognitionsController.deleteRecognition
 );
 
 // ============================================

@@ -14,6 +14,7 @@ import tasksRoutes from './routes/tasks.routes';
 import notesRoutes from './routes/notes.routes';
 
 import { AnnouncementsController } from './controllers/announcements.controller';
+import { RecognitionsController } from './controllers/recognitions.controller';
 
 const app = express();
 
@@ -58,6 +59,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 // Public route for announcement images (no auth required)
 app.get('/api/announcements/:id/image', AnnouncementsController.getAnnouncementImagePublic);
+// Public route for recognition images (no auth required)
+app.get('/api/recognitions/:id/image', RecognitionsController.getRecognitionImagePublic);
 app.use('/api/admin', adminRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/finance', financeRoutes);

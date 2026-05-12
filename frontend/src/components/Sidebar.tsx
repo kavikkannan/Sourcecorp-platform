@@ -25,6 +25,7 @@ import {
   StickyNote,
   Plus,
   ListTodo,
+  Award,
 } from 'lucide-react';
 
 interface NavItem {
@@ -147,6 +148,12 @@ const navSections: NavSection[] = [
         href: '/admin/templates/customer-detail',
         icon: FileSpreadsheet,
         permission: 'admin.users.read',
+      },
+      {
+        name: 'Recognitions',
+        href: '/admin/recognitions',
+        icon: Award,
+        permission: 'admin.recognitions.read',
       },
     ],
   },

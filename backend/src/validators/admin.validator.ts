@@ -287,3 +287,34 @@ export const caseIdSchema = z.object({
   }),
 });
 
+export const createRecognitionSchema = z.object({
+  body: z.object({
+    type: z.enum(['MONTHLY_ACHIEVER', 'BEST_EMPLOYEE']),
+    employee_name: z.string().min(1, 'Employee name is required'),
+    employee_email: z.string().email().optional().or(z.literal('')),
+    designation: z.string().optional(),
+    month: z.string().min(1, 'Month is required'),
+    description: z.string().optional(),
+  }),
+});
+
+export const updateRecognitionSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid recognition ID'),
+  }),
+  body: z.object({
+    employee_name: z.string().min(1).optional(),
+    employee_email: z.string().email().optional().or(z.literal('')).optional(),
+    designation: z.string().optional(),
+    month: z.string().optional(),
+    description: z.string().optional(),
+    is_active: z.boolean().optional(),
+  }),
+});
+
+export const recognitionIdSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid recognition ID'),
+  }),
+});
+
