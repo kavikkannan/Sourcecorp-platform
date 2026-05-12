@@ -435,6 +435,9 @@ export const CASE_STATUSES = [
   { value: 'CREDIT_APPROVED', label: 'Credit Approved', color: 'bg-green-100 text-green-800' },
   { value: 'DISBURSED', label: 'Disbursed Case', color: 'bg-teal-100 text-teal-800' },
   { value: 'REJECTED', label: 'Rejected Case', color: 'bg-red-100 text-red-800' },
+  { value: 'HOLD', label: 'Hold', color: 'bg-amber-100 text-amber-800' },
+  { value: 'CUSTOMER_NOT_RESPONDING', label: 'Customer Not Responding', color: 'bg-slate-100 text-slate-800' },
+  { value: 'NOT_INTERESTED', label: 'Not Interested', color: 'bg-gray-100 text-gray-800' },
 ];
 
 export const getStatusColor = (status: string): string => {

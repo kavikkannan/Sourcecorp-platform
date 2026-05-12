@@ -147,6 +147,9 @@ export const CaseStatus = {
   CREDIT_APPROVED: 'CREDIT_APPROVED',
   DISBURSED: 'DISBURSED',
   REJECTED: 'REJECTED',
+  HOLD: 'HOLD',
+  CUSTOMER_NOT_RESPONDING: 'CUSTOMER_NOT_RESPONDING',
+  NOT_INTERESTED: 'NOT_INTERESTED',
 } as const;
 
 export type CaseStatusType = typeof CaseStatus[keyof typeof CaseStatus];

@@ -63,6 +63,9 @@ export const updateStatusSchema = z.object({
       'CREDIT_APPROVED',
       'DISBURSED',
       'REJECTED',
+      'HOLD',
+      'CUSTOMER_NOT_RESPONDING',
+      'NOT_INTERESTED',
     ], {
       errorMap: () => ({ message: 'Invalid status' }),
     }),
