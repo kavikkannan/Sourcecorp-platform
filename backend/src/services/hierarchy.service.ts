@@ -3,6 +3,7 @@ import { User, UserHierarchy, HierarchyNode, HierarchyTree } from '../types';
 import { logger } from '../config/logger';
 
 export class HierarchyService {
+  private static readonly MAX_DEPTH = 20;
   /**
    * Assign a manager to a subordinate
    * Validates: no existing manager, no self-reference, no cycles
@@ -51,6 +52,13 @@ export class HierarchyService {
          VALUES ($1, $2)
          RETURNING id, manager_id, subordinate_id, created_at`,
         [managerId, subordinateId]
+      );
+
+      // Record history
+      await query(
+        `INSERT INTO auth_schema.hierarchy_history (subordinate_id, old_manager_id, new_manager_id, change_type)
+         VALUES ($1, NULL, $2, 'ASSIGN')`,
+        [subordinateId, managerId]
       );
 
       return result.rows[0];
@@ -266,6 +274,39 @@ export class HierarchyService {
   }
 
   /**
+   * Get hierarchy history for a user
+   */
+  static async getHierarchyHistory(userId: string): Promise<any[]> {
+    const result = await query(
+      `SELECT 
+        hh.id,
+        hh.subordinate_id,
+        hh.old_manager_id,
+        hh.new_manager_id,
+        hh.change_type,
+        hh.created_at,
+        s.email as subordinate_email,
+        s.first_name as subordinate_first_name,
+        s.last_name as subordinate_last_name,
+        om.email as old_manager_email,
+        om.first_name as old_manager_first_name,
+        om.last_name as old_manager_last_name,
+        nm.email as new_manager_email,
+        nm.first_name as new_manager_first_name,
+        nm.last_name as new_manager_last_name
+      FROM auth_schema.hierarchy_history hh
+      JOIN auth_schema.users s ON hh.subordinate_id = s.id
+      LEFT JOIN auth_schema.users om ON hh.old_manager_id = om.id
+      LEFT JOIN auth_schema.users nm ON hh.new_manager_id = nm.id
+      WHERE hh.subordinate_id = $1
+      ORDER BY hh.created_at DESC`,
+      [userId]
+    );
+
+    return result.rows;
+  }
+
+  /**
    * Check if assigning a manager would create a cycle
    */
   private static async wouldCreateCycle(
@@ -348,25 +389,142 @@ export class HierarchyService {
 
   /**
    * Get all subordinates recursively (including indirect subordinates)
+   * Uses recursive SQL CTE for optimal performance
    */
   static async getAllSubordinates(userId: string): Promise<User[]> {
-    const allSubordinates: User[] = [];
-    const visited = new Set<string>();
+    const result = await query(
+      `WITH RECURSIVE subordinate_tree AS (
+        -- Direct subordinates
+        SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.created_at, u.updated_at, 1 as depth
+        FROM auth_schema.users u
+        JOIN auth_schema.user_hierarchy uh ON u.id = uh.subordinate_id
+        WHERE uh.manager_id = $1 AND u.is_active = true
+        
+        UNION ALL
+        
+        -- Indirect subordinates
+        SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.created_at, u.updated_at, st.depth + 1
+        FROM auth_schema.users u
+        JOIN auth_schema.user_hierarchy uh ON u.id = uh.subordinate_id
+        JOIN subordinate_tree st ON uh.manager_id = st.id
+        WHERE u.is_active = true AND st.depth < $2
+      )
+      SELECT id, email, first_name, last_name, is_active, created_at, updated_at
+      FROM subordinate_tree
+      ORDER BY first_name, last_name`,
+      [userId, this.MAX_DEPTH]
+    );
 
-    const collectSubordinates = async (managerId: string) => {
-      const directSubs = await this.getSubordinates(managerId);
-      
-      for (const sub of directSubs) {
-        if (!visited.has(sub.id)) {
-          visited.add(sub.id);
-          allSubordinates.push(sub);
-          await collectSubordinates(sub.id);
-        }
-      }
-    };
-
-    await collectSubordinates(userId);
-    return allSubordinates;
+    return result.rows;
   }
-}
 
+  /**
+   * Get the depth of a user in the hierarchy (0 = root)
+   */
+  static async getUserDepth(userId: string): Promise<number> {
+    const result = await query(
+      `WITH RECURSIVE depth_tree AS (
+        SELECT subordinate_id, manager_id, 0 as depth
+        FROM auth_schema.user_hierarchy
+        WHERE subordinate_id = $1
+        
+        UNION ALL
+        
+        SELECT uh.subordinate_id, uh.manager_id, dt.depth + 1
+        FROM auth_schema.user_hierarchy uh
+        JOIN depth_tree dt ON uh.subordinate_id = dt.manager_id
+        WHERE dt.depth < $2
+      )
+      SELECT MAX(depth) as depth FROM depth_tree`,
+      [userId, this.MAX_DEPTH]
+    );
+
+    return result.rows[0]?.depth ?? 0;
+  }
+
+  /**
+   * Transfer a subordinate from their current manager to a new manager (atomic)
+   */
+  static async transferManager(
+    subordinateId: string,
+    newManagerId: string
+  ): Promise<UserHierarchy> {
+    // Check self-reference
+    if (subordinateId === newManagerId) {
+      throw new Error('User cannot be their own manager');
+    }
+
+    // Check if both users exist and are active
+    const usersCheck = await query(
+      `SELECT id FROM auth_schema.users
+       WHERE id IN ($1, $2) AND is_active = true`,
+      [subordinateId, newManagerId]
+    );
+
+    if (usersCheck.rows.length !== 2) {
+      throw new Error('One or both users do not exist or are inactive');
+    }
+
+    // Check for potential cycle
+    const wouldCreateCycle = await this.wouldCreateCycle(subordinateId, newManagerId);
+    if (wouldCreateCycle) {
+      throw new Error('This transfer would create a circular hierarchy');
+    }
+
+    // Check depth limit
+    const newManagerDepth = await this.getUserDepth(newManagerId);
+    if (newManagerDepth + 1 >= this.MAX_DEPTH) {
+      throw new Error(`Hierarchy depth limit (${this.MAX_DEPTH}) would be exceeded`);
+    }
+
+    // Atomic transfer: delete old, insert new in one transaction
+    const result = await query(
+      `WITH deleted AS (
+        DELETE FROM auth_schema.user_hierarchy
+        WHERE subordinate_id = $1
+        RETURNING manager_id as old_manager_id
+      )
+      INSERT INTO auth_schema.user_hierarchy (manager_id, subordinate_id)
+      SELECT $2, $1
+      FROM deleted
+      RETURNING id, manager_id, subordinate_id, created_at`,
+      [subordinateId, newManagerId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('User does not have an existing manager to transfer from');
+    }
+
+    // Record history
+    await query(
+      `INSERT INTO auth_schema.hierarchy_history (subordinate_id, old_manager_id, new_manager_id, change_type)
+       VALUES ($1, $2, $3, 'TRANSFER')`,
+      [subordinateId, result.rows[0].old_manager_id, newManagerId]
+    );
+
+    return result.rows[0];
+  }
+
+  /**
+   * Batch assign multiple subordinates to a manager
+   */
+  static async batchAssignManager(
+    subordinateIds: string[],
+    managerId: string
+  ): Promise<{ succeeded: string[]; failed: { id: string; reason: string }[] }> {
+    const succeeded: string[] = [];
+    const failed: { id: string; reason: string }[] = [];
+
+    for (const subordinateId of subordinateIds) {
+      try {
+        await this.assignManager(subordinateId, managerId);
+        succeeded.push(subordinateId);
+      } catch (error: any) {
+        failed.push({ id: subordinateId, reason: error.message });
+      }
+    }
+
+    return { succeeded, failed };
+  }
+
+}

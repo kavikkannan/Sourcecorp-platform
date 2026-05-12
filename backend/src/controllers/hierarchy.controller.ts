@@ -148,6 +148,101 @@ export class HierarchyController {
   }
 
   /**
+   * POST /api/admin/hierarchy/transfer
+   * Admin only: Transfer a subordinate to a new manager (atomic)
+   */
+  static async transferManager(req: AuthRequest, res: Response) {
+    try {
+      const { subordinateId, newManagerId } = req.body;
+
+      const hierarchy = await HierarchyService.transferManager(subordinateId, newManagerId);
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user?.userId,
+        action: 'admin.hierarchy.transfer',
+        resourceType: 'hierarchy',
+        resourceId: hierarchy.id,
+        details: {
+          subordinateId,
+          newManagerId,
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.json({
+        message: 'Manager transferred successfully',
+        hierarchy,
+      });
+    } catch (error: any) {
+      if (error.message.includes('circular') || error.message.includes('cycle')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error.message.includes('cannot be their own')) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error.message.includes('does not have an existing manager')) {
+        return res.status(404).json({ error: error.message });
+      }
+      if (error.message.includes('depth limit')) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST /api/admin/hierarchy/batch-assign
+   * Admin only: Batch assign multiple subordinates to a manager
+   */
+  static async batchAssignManager(req: AuthRequest, res: Response) {
+    try {
+      const { subordinateIds, managerId } = req.body;
+
+      const result = await HierarchyService.batchAssignManager(subordinateIds, managerId);
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user?.userId,
+        action: 'admin.hierarchy.batch_assign',
+        resourceType: 'hierarchy',
+        resourceId: managerId,
+        details: {
+          subordinateIds,
+          managerId,
+          succeededCount: result.succeeded.length,
+          failedCount: result.failed.length,
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(201).json({
+        message: `Assigned ${result.succeeded.length} subordinate(s) successfully`,
+        ...result,
+      });
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  /**
+   * GET /api/admin/hierarchy/history/:userId
+   * Admin only: Get hierarchy change history for a user
+   */
+  static async getHierarchyHistory(req: AuthRequest, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      const history = await HierarchyService.getHierarchyHistory(userId);
+      res.json(history);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
    * GET /api/users/me/subordinates/all
    * User level: Get all subordinates recursively (direct and indirect)
    */

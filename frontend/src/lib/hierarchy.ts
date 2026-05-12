@@ -32,6 +32,34 @@ export interface RemoveManagerData {
   subordinateId: string;
 }
 
+export interface TransferManagerData {
+  subordinateId: string;
+  newManagerId: string;
+}
+
+export interface BatchAssignManagerData {
+  subordinateIds: string[];
+  managerId: string;
+}
+
+export interface HierarchyHistoryEntry {
+  id: string;
+  subordinate_id: string;
+  old_manager_id: string | null;
+  new_manager_id: string | null;
+  change_type: 'ASSIGN' | 'REMOVE' | 'TRANSFER';
+  created_at: string;
+  subordinate_email: string;
+  subordinate_first_name: string;
+  subordinate_last_name: string;
+  old_manager_email?: string;
+  old_manager_first_name?: string;
+  old_manager_last_name?: string;
+  new_manager_email?: string;
+  new_manager_first_name?: string;
+  new_manager_last_name?: string;
+}
+
 // Hierarchy Service
 export const hierarchyService = {
   // Admin endpoints
@@ -47,6 +75,21 @@ export const hierarchyService = {
 
   async getHierarchyTree(): Promise<HierarchyTree> {
     const response = await api.get('/admin/hierarchy/tree');
+    return response.data;
+  },
+
+  async transferManager(data: TransferManagerData): Promise<{ message: string; hierarchy: any }> {
+    const response = await api.post('/admin/hierarchy/transfer', data);
+    return response.data;
+  },
+
+  async batchAssignManager(data: BatchAssignManagerData): Promise<{ message: string; succeeded: string[]; failed: { id: string; reason: string }[] }> {
+    const response = await api.post('/admin/hierarchy/batch-assign', data);
+    return response.data;
+  },
+
+  async getHierarchyHistory(userId: string): Promise<HierarchyHistoryEntry[]> {
+    const response = await api.get(`/admin/hierarchy/history/${userId}`);
     return response.data;
   },
 

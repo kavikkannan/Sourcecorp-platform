@@ -195,6 +195,26 @@ export const removeManagerSchema = z.object({
   }),
 });
 
+export const transferManagerSchema = z.object({
+  body: z.object({
+    subordinateId: z.string().uuid('Invalid subordinate ID'),
+    newManagerId: z.string().uuid('Invalid manager ID'),
+  }),
+});
+
+export const batchAssignManagerSchema = z.object({
+  body: z.object({
+    subordinateIds: z.array(z.string().uuid('Invalid subordinate ID')).min(1, 'At least one subordinate is required'),
+    managerId: z.string().uuid('Invalid manager ID'),
+  }),
+});
+
+export const hierarchyHistorySchema = z.object({
+  params: z.object({
+    userId: z.string().uuid('Invalid user ID'),
+  }),
+});
+
 // ============================================
 // TASK VALIDATORS
 // ============================================

@@ -302,6 +302,27 @@ router.get(
   HierarchyController.getHierarchyTree
 );
 
+router.post(
+  '/hierarchy/transfer',
+  requirePermission('admin.hierarchy.manage'),
+  validate(validators.transferManagerSchema),
+  HierarchyController.transferManager
+);
+
+router.post(
+  '/hierarchy/batch-assign',
+  requirePermission('admin.hierarchy.manage'),
+  validate(validators.batchAssignManagerSchema),
+  HierarchyController.batchAssignManager
+);
+
+router.get(
+  '/hierarchy/history/:userId',
+  requirePermission('admin.hierarchy.manage'),
+  validate(validators.hierarchyHistorySchema),
+  HierarchyController.getHierarchyHistory
+);
+
 // ============================================
 // CUSTOMER DETAIL TEMPLATE MANAGEMENT
 // ============================================

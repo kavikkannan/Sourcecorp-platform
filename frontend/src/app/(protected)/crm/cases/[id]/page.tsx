@@ -47,6 +47,7 @@ import {
   getStatusLabel,
 } from '@/lib/crm';
 import { api } from '@/lib/api';
+import { hierarchyService } from '@/lib/hierarchy';
 import { formatIndianCurrency } from '@/utils/formatNumber';
 import JSZip from 'jszip';
 
@@ -201,23 +202,38 @@ export default function CaseDetailPage() {
   const loadUsers = useCallback(async () => {
     try {
       setLoadingUsers(true);
-      const response = await api.get('/admin/users');
-      // Filter only active users
-      const activeUsers = response.data
-        .filter((user: any) => user.isActive)
-        .map((user: any) => ({
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-        }));
+      let activeUsers: any[] = [];
+      
+      // Admins can assign to anyone; others only to their subordinates
+      if (hasPermission('admin.users.read')) {
+        const response = await api.get('/admin/users');
+        activeUsers = response.data
+          .filter((u: any) => u.isActive)
+          .map((u: any) => ({
+            id: u.id,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            email: u.email,
+          }));
+      } else {
+        const subs = await hierarchyService.getAllMySubordinates();
+        activeUsers = subs
+          .filter((u) => u.is_active)
+          .map((u) => ({
+            id: u.id,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+          }));
+      }
+      
       setAvailableUsers(activeUsers);
     } catch (error) {
       alert('Failed to load users');
     } finally {
       setLoadingUsers(false);
     }
-  }, []);
+  }, [hasPermission]);
 
   useEffect(() => {
     if (showAssignModal) {
