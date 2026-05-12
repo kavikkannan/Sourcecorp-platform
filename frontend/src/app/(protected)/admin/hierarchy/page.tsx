@@ -17,7 +17,7 @@ import {
   Square,
   UserCheck,
 } from 'lucide-react';
-import { Tree, TreeNode } from 'react-organizational-chart';
+
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
@@ -28,6 +28,30 @@ import {
   HierarchyHistoryEntry,
 } from '@/lib/hierarchy';
 import api from '@/lib/api';
+
+// ------------------------------------------------------------------
+// CSS Overrides for react-organizational-chart
+// ------------------------------------------------------------------
+const orgChartStyles = `
+  .oc-tree { display: flex; flex-direction: column; align-items: center; }
+  .oc-children { display: flex; justify-content: center; padding-top: 24px; position: relative; }
+  .oc-children::before {
+    content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 24px;
+    border-left: 1.5px solid #94a3b8;
+  }
+  .oc-branch { display: flex; flex-direction: column; align-items: center; position: relative; padding: 0 6px; }
+  .oc-branch::before {
+    content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 24px;
+    border-top: 1.5px solid #94a3b8;
+  }
+  .oc-branch:first-child::before { left: 50%; width: 50%; border-left: 1.5px solid #94a3b8; border-top-left-radius: 8px; }
+  .oc-branch:last-child::before { width: 50%; border-right: 1.5px solid #94a3b8; border-top-right-radius: 8px; }
+  .oc-branch:only-child::before { display: none; }
+  .oc-branch::after {
+    content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 24px;
+    border-left: 1.5px solid #94a3b8;
+  }
+`; 
 
 // ------------------------------------------------------------------
 // Helpers
@@ -102,7 +126,7 @@ function NodeCard({
 
   return (
     <div
-      className={`relative min-w-[260px] max-w-[320px] rounded-xl border-2 ${styles.border} ${styles.bg} shadow-sm hover:shadow-md transition-shadow p-4`}
+      className={`relative w-[220px] rounded-xl border-2 ${styles.border} ${styles.bg} shadow-sm hover:shadow-md transition-shadow p-3 inline-block align-top`}
     >
       {/* Batch checkbox */}
       {isBatchMode && node.depth === 0 && (
@@ -275,6 +299,7 @@ function OrgTree({
 }: OrgTreeProps) {
   const isExpanded = expandedNodes.has(node.user.id);
   const hasChildren = node.subordinates.length > 0;
+  const visibleChildren = node.subordinates.filter((sub) => visibleNodeIds.has(sub.user.id));
 
   // If this node itself isn't visible, skip rendering it entirely
   if (!visibleNodeIds.has(node.user.id)) {
@@ -282,44 +307,44 @@ function OrgTree({
   }
 
   return (
-    <TreeNode
-      label={
-        <NodeCard
-          node={node}
-          userRoles={userRoles}
-          isExpanded={isExpanded}
-          hasChildren={hasChildren}
-          isBatchMode={isBatchMode}
-          isSelected={selectedIds.has(node.user.id)}
-          onToggleExpand={onToggleExpand}
-          onSelectForBatch={onSelectForBatch}
-          onAssign={onAssign}
-          onTransfer={onTransfer}
-          onRemove={onRemove}
-          onHistory={onHistory}
-        />
-      }
-    >
-      {isExpanded &&
-        hasChildren &&
-        node.subordinates.map((sub) => (
-          <OrgTree
-            key={sub.user.id}
-            node={sub}
-            expandedNodes={expandedNodes}
-            visibleNodeIds={visibleNodeIds}
-            userRoles={userRoles}
-            isBatchMode={isBatchMode}
-            selectedIds={selectedIds}
-            onToggleExpand={onToggleExpand}
-            onSelectForBatch={onSelectForBatch}
-            onAssign={onAssign}
-            onTransfer={onTransfer}
-            onRemove={onRemove}
-            onHistory={onHistory}
-          />
-        ))}
-    </TreeNode>
+    <div className="oc-tree">
+      <NodeCard
+        node={node}
+        userRoles={userRoles}
+        isExpanded={isExpanded}
+        hasChildren={hasChildren}
+        isBatchMode={isBatchMode}
+        isSelected={selectedIds.has(node.user.id)}
+        onToggleExpand={onToggleExpand}
+        onSelectForBatch={onSelectForBatch}
+        onAssign={onAssign}
+        onTransfer={onTransfer}
+        onRemove={onRemove}
+        onHistory={onHistory}
+      />
+      {isExpanded && visibleChildren.length > 0 && (
+        <div className="oc-children">
+          {visibleChildren.map((sub) => (
+            <div key={sub.user.id} className="oc-branch">
+              <OrgTree
+                node={sub}
+                expandedNodes={expandedNodes}
+                visibleNodeIds={visibleNodeIds}
+                userRoles={userRoles}
+                isBatchMode={isBatchMode}
+                selectedIds={selectedIds}
+                onToggleExpand={onToggleExpand}
+                onSelectForBatch={onSelectForBatch}
+                onAssign={onAssign}
+                onTransfer={onTransfer}
+                onRemove={onRemove}
+                onHistory={onHistory}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -613,6 +638,7 @@ export default function HierarchyPage() {
 
   return (
     <div>
+      <style dangerouslySetInnerHTML={{ __html: orgChartStyles }} />
       <PageHeader
         title="Reporting Hierarchy"
         description="Visualize and manage manager-subordinate relationships."
@@ -699,22 +725,10 @@ export default function HierarchyPage() {
       {/* Org Chart */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 overflow-x-auto">
         {tree && tree.root.length > 0 ? (
-          <div className="min-w-max">
-            <Tree
-              lineWidth="2px"
-              lineColor="#cbd5e1"
-              lineBorderRadius="8px"
-              label={
-                <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-lg text-sm font-medium text-gray-700 mb-4">
-                  <Users className="w-4 h-4" />
-                  Organization
-                  <span className="text-xs text-gray-500">({rootUsers.length} users)</span>
-                </div>
-              }
-            >
-              {tree.root.map((rootNode) => (
+          <div className="space-y-16">
+            {tree.root.map((rootNode) => (
+              <div key={rootNode.user.id} className="flex justify-center">
                 <OrgTree
-                  key={rootNode.user.id}
                   node={rootNode}
                   expandedNodes={expandedNodes}
                   visibleNodeIds={visibleNodeIds}
@@ -739,8 +753,8 @@ export default function HierarchyPage() {
                   }}
                   onHistory={loadHistory}
                 />
-              ))}
-            </Tree>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="text-center py-12">
