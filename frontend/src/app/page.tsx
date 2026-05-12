@@ -1,8 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { redirect } from 'next/navigation';
 
-export default function MaintenancePage() {
+export default function Home() {
+  // Set to true to enable maintenance mode
+  const isMaintenanceMode = false;
+
+  if (!isMaintenanceMode) {
+    redirect('/login');
+  }
+
+  return <MaintenancePage />;
+}
+
+function MaintenancePage() {
   const [dots, setDots] = useState('');
   const [progress, setProgress] = useState(0);
 

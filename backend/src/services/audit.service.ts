@@ -108,7 +108,7 @@ export class AuditService {
       // Month filter: filter by year and month
       if (filters.month) {
         const [year, month] = filters.month.split('-');
-        conditions.push(`EXTRACT(YEAR FROM created_at) = $${paramIndex++} AND EXTRACT(MONTH FROM created_at) = $${paramIndex++}`);
+        conditions.push(`EXTRACT(YEAR FROM al.created_at) = $${paramIndex++} AND EXTRACT(MONTH FROM al.created_at) = $${paramIndex++}`);
         params.push(parseInt(year), parseInt(month));
       }
       
@@ -134,7 +134,7 @@ export class AuditService {
     );
 
     const countResult = await query(
-      `SELECT COUNT(*) as total FROM audit_schema.audit_logs ${whereClause}`,
+      `SELECT COUNT(*) as total FROM audit_schema.audit_logs al ${whereClause}`,
       params.slice(0, -2)
     );
 
@@ -167,7 +167,7 @@ export class AuditService {
       // Month filter: filter by year and month
       if (filters.month) {
         const [year, month] = filters.month.split('-');
-        conditions.push(`EXTRACT(YEAR FROM created_at) = $${paramIndex++} AND EXTRACT(MONTH FROM created_at) = $${paramIndex++}`);
+        conditions.push(`EXTRACT(YEAR FROM el.created_at) = $${paramIndex++} AND EXTRACT(MONTH FROM el.created_at) = $${paramIndex++}`);
         params.push(parseInt(year), parseInt(month));
       }
       
@@ -193,7 +193,7 @@ export class AuditService {
     );
 
     const countResult = await query(
-      `SELECT COUNT(*) as total FROM audit_schema.error_logs ${whereClause}`,
+      `SELECT COUNT(*) as total FROM audit_schema.error_logs el ${whereClause}`,
       params.slice(0, -2)
     );
 

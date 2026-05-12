@@ -121,7 +121,7 @@ export class HierarchyController {
       const manager = await HierarchyService.getManager(req.user.userId);
 
       if (!manager) {
-        return res.status(404).json({ error: 'No manager assigned' });
+        return res.json(null);
       }
 
       res.json(manager);

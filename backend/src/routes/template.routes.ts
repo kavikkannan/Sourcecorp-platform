@@ -61,7 +61,7 @@ router.get(
 );
 
 router.get(
-  '/obligation/:id?',
+  '/obligation/:id',
   validate(getObligationTemplateSchema),
   TemplateController.getObligationTemplate
 );
