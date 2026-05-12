@@ -774,29 +774,32 @@ export default function DashboardPage() {
                 return (
                   <div className="space-y-3">
                     {achiever.image_path ? (
-                      <div className="relative w-full h-48 rounded-lg overflow-hidden bg-white shadow-md">
+                      <div className="relative w-full rounded-lg overflow-hidden bg-white shadow-md flex items-center justify-center" style={{ maxHeight: '420px' }}>
                         <img
                           src={`${API_URL.replace('/api', '')}/api/recognitions/${achiever.id}/image`}
                           alt={achiever.employee_name}
-                          className="w-full h-full object-cover rounded-lg"
+                          className="w-full h-full object-contain rounded-lg"
+                          style={{ maxHeight: '420px' }}
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       </div>
                     ) : (
-                      <div className="w-full h-48 rounded-lg bg-yellow-100 flex items-center justify-center">
+                      <div className="w-full rounded-lg bg-yellow-100 flex items-center justify-center" style={{ height: '280px' }}>
                         <Award className="w-16 h-16 text-yellow-400" />
                       </div>
                     )}
-                    <div className="text-center">
+                    <div className="text-center pt-2">
                       <div className="text-lg font-bold text-gray-900">{achiever.employee_name}</div>
-                      {achiever.designation && <div className="text-sm text-gray-600">{achiever.designation}</div>}
-                      <div className="text-xs text-gray-500 mt-1">{achiever.month}</div>
+                      {achiever.designation && <div className="text-sm text-gray-600 font-medium">{achiever.designation}</div>}
+                      <div className="text-xs text-gray-500 mt-1">
+                        {achiever.month ? format(new Date(achiever.month + '-01'), 'MMMM yyyy') : ''}
+                      </div>
                     </div>
                   </div>
                 );
               }
               return (
-                <div className="flex flex-col items-center justify-center h-[220px] border-2 border-dashed border-yellow-300 rounded-lg">
+                <div className="flex flex-col items-center justify-center border-2 border-dashed border-yellow-300 rounded-lg py-16">
                   {hasPermission('admin.recognitions.create') ? (
                     <>
                       <Award className="w-10 h-10 text-yellow-400 mb-3" />
@@ -822,7 +825,7 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border-2 border-blue-200 hover:shadow-lg transition-shadow min-h-[280px]"
+            className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border-2 border-blue-200 hover:shadow-lg transition-shadow"
           >
             <div className="flex items-center gap-2 mb-3">
               <Award className="w-5 h-5 text-blue-600" />
@@ -836,29 +839,32 @@ export default function DashboardPage() {
                 return (
                   <div className="space-y-3">
                     {bestEmp.image_path ? (
-                      <div className="relative w-full h-48 rounded-lg overflow-hidden bg-white shadow-md">
+                      <div className="relative w-full rounded-lg overflow-hidden bg-white shadow-md flex items-center justify-center" style={{ maxHeight: '420px' }}>
                         <img
                           src={`${API_URL.replace('/api', '')}/api/recognitions/${bestEmp.id}/image`}
                           alt={bestEmp.employee_name}
-                          className="w-full h-full object-cover rounded-lg"
+                          className="w-full h-full object-contain rounded-lg"
+                          style={{ maxHeight: '420px' }}
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       </div>
                     ) : (
-                      <div className="w-full h-48 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <div className="w-full rounded-lg bg-blue-100 flex items-center justify-center" style={{ height: '280px' }}>
                         <Award className="w-16 h-16 text-blue-400" />
                       </div>
                     )}
-                    <div className="text-center">
+                    <div className="text-center pt-2">
                       <div className="text-lg font-bold text-gray-900">{bestEmp.employee_name}</div>
-                      {bestEmp.designation && <div className="text-sm text-gray-600">{bestEmp.designation}</div>}
-                      <div className="text-xs text-gray-500 mt-1">{bestEmp.month}</div>
+                      {bestEmp.designation && <div className="text-sm text-gray-600 font-medium">{bestEmp.designation}</div>}
+                      <div className="text-xs text-gray-500 mt-1">
+                        {bestEmp.month ? format(new Date(bestEmp.month + '-01'), 'MMMM yyyy') : ''}
+                      </div>
                     </div>
                   </div>
                 );
               }
               return (
-                <div className="flex flex-col items-center justify-center h-[220px] border-2 border-dashed border-blue-300 rounded-lg">
+                <div className="flex flex-col items-center justify-center border-2 border-dashed border-blue-300 rounded-lg py-16">
                   {hasPermission('admin.recognitions.create') ? (
                     <>
                       <Award className="w-10 h-10 text-blue-400 mb-3" />

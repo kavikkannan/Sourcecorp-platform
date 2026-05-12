@@ -299,7 +299,7 @@ export default function RecognitionsPage() {
             />
             {imagePreview && (
               <div className="mt-2">
-                <img src={imagePreview} alt="Preview" className="h-32 rounded-lg object-cover border border-gray-200" />
+                <img src={imagePreview} alt="Preview" className="max-h-64 rounded-lg object-contain border border-gray-200" />
               </div>
             )}
           </div>
