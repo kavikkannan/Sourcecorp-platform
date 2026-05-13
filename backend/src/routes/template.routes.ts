@@ -7,9 +7,11 @@ import {
   createCAMTemplateSchema,
   updateCAMTemplateSchema,
   getCAMTemplateSchema,
+  deleteCAMTemplateSchema,
   createObligationTemplateSchema,
   updateObligationTemplateSchema,
   getObligationTemplateSchema,
+  deleteObligationTemplateSchema,
 } from '../validators/template.validator';
 
 const router = Router();
@@ -48,6 +50,12 @@ router.put(
   TemplateController.updateCAMTemplate
 );
 
+router.delete(
+  '/cam/:id',
+  validate(deleteCAMTemplateSchema),
+  TemplateController.deleteCAMTemplate
+);
+
 // Obligation Template routes
 router.post(
   '/obligation',
@@ -70,6 +78,12 @@ router.put(
   '/obligation/:id',
   validate(updateObligationTemplateSchema),
   TemplateController.updateObligationTemplate
+);
+
+router.delete(
+  '/obligation/:id',
+  validate(deleteObligationTemplateSchema),
+  TemplateController.deleteObligationTemplate
 );
 
 export default router;

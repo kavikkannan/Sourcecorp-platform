@@ -113,6 +113,32 @@ export class TemplateController {
     }
   }
 
+  static async deleteCAMTemplate(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      await TemplateService.deleteCAMTemplate(id);
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'finance.template.cam.delete',
+        resourceType: 'cam_template',
+        resourceId: id,
+        details: {},
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(204).send();
+    } catch (error: any) {
+      if (error.message === 'Template not found') {
+        return res.status(404).json({ error: 'CAM template not found' });
+      }
+      throw error;
+    }
+  }
+
   // ============================================
   // OBLIGATION TEMPLATE MANAGEMENT
   // ============================================
@@ -222,6 +248,32 @@ export class TemplateController {
       res.json(template);
     } catch (error: any) {
       if (error.message === 'Template not found after update') {
+        return res.status(404).json({ error: 'Obligation template not found' });
+      }
+      throw error;
+    }
+  }
+
+  static async deleteObligationTemplate(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      await TemplateService.deleteObligationTemplate(id);
+
+      // Audit log
+      await AuditService.createLog({
+        userId: req.user!.userId,
+        action: 'finance.template.obligation.delete',
+        resourceType: 'obligation_template',
+        resourceId: id,
+        details: {},
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(204).send();
+    } catch (error: any) {
+      if (error.message === 'Template not found') {
         return res.status(404).json({ error: 'Obligation template not found' });
       }
       throw error;

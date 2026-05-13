@@ -8,9 +8,18 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children?: React.ReactNode;
+  size?: 'md' | 'lg' | 'xl' | '2xl' | 'full';
 }
 
-export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
+const sizeClasses = {
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  '2xl': 'max-w-5xl',
+  full: 'max-w-[90vw]',
+};
+
+export default function Modal({ isOpen, onClose, title, children, size = 'lg' }: ModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -27,7 +36,7 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] my-8 relative"
+              className={`bg-white rounded-xl shadow-2xl ${sizeClasses[size]} w-full max-h-[90vh] my-8 relative`}
             >
               <div className="flex items-center justify-between p-6 border-b border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-900">{title}</h2>

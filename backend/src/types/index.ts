@@ -268,6 +268,7 @@ export interface ObligationTemplate {
 export interface ObligationField {
   id: string;
   template_id: string;
+  section_name: string;
   field_key: string;
   label: string;
   field_type: 'text' | 'number' | 'currency' | 'date' | 'select';

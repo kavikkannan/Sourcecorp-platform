@@ -296,6 +296,29 @@ export class TemplateService {
     return updated;
   }
 
+  static async deleteCAMTemplate(templateId: string): Promise<void> {
+    // Check if template exists
+    const templateResult = await query(
+      `SELECT id FROM finance_schema.cam_templates WHERE id = $1`,
+      [templateId]
+    );
+    if (templateResult.rows.length === 0) {
+      throw new Error('Template not found');
+    }
+
+    // Delete fields first (cascade would handle this, but explicit is safer)
+    await query(
+      `DELETE FROM finance_schema.cam_fields WHERE template_id = $1`,
+      [templateId]
+    );
+
+    // Delete template
+    await query(
+      `DELETE FROM finance_schema.cam_templates WHERE id = $1`,
+      [templateId]
+    );
+  }
+
   // ============================================
   // OBLIGATION TEMPLATE MANAGEMENT
   // ============================================
@@ -304,6 +327,7 @@ export class TemplateService {
     template_name: string;
     sections: string[];
     fields: Array<{
+      section_name: string;
       field_key: string;
       label: string;
       field_type: 'text' | 'number' | 'currency' | 'date' | 'select';
@@ -343,12 +367,13 @@ export class TemplateService {
     for (const field of data.fields) {
       const fieldResult = await query(
         `INSERT INTO finance_schema.obligation_fields 
-         (template_id, field_key, label, field_type, is_mandatory, 
+         (template_id, section_name, field_key, label, field_type, is_mandatory, 
           is_repeatable, order_index, default_value, validation_rules, select_options)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           templateId,
+          field.section_name || 'General',
           field.field_key,
           field.label,
           field.field_type,
@@ -365,6 +390,7 @@ export class TemplateService {
       fields.push({
         id: row.id,
         template_id: row.template_id,
+        section_name: row.section_name,
         field_key: row.field_key,
         label: row.label,
         field_type: row.field_type,
@@ -407,13 +433,14 @@ export class TemplateService {
     const fieldsResult = await query(
       `SELECT * FROM finance_schema.obligation_fields 
        WHERE template_id = $1 
-       ORDER BY order_index`,
+       ORDER BY section_name, order_index`,
       [templateId]
     );
 
     const fields: ObligationField[] = fieldsResult.rows.map(row => ({
       id: row.id,
       template_id: row.template_id,
+      section_name: row.section_name,
       field_key: row.field_key,
       label: row.label,
       field_type: row.field_type,
@@ -509,6 +536,7 @@ export class TemplateService {
       sections?: string[];
       is_active?: boolean;
       fields?: Array<{
+        section_name: string;
         field_key: string;
         label: string;
         field_type: 'text' | 'number' | 'currency' | 'date' | 'select';
@@ -561,11 +589,12 @@ export class TemplateService {
       for (const field of data.fields) {
         await query(
           `INSERT INTO finance_schema.obligation_fields 
-           (template_id, field_key, label, field_type, is_mandatory, 
+           (template_id, section_name, field_key, label, field_type, is_mandatory, 
             is_repeatable, order_index, default_value, validation_rules, select_options)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             templateId,
+            field.section_name || 'General',
             field.field_key,
             field.label,
             field.field_type,
@@ -585,6 +614,29 @@ export class TemplateService {
       throw new Error('Template not found after update');
     }
     return updated;
+  }
+
+  static async deleteObligationTemplate(templateId: string): Promise<void> {
+    // Check if template exists
+    const templateResult = await query(
+      `SELECT id FROM finance_schema.obligation_templates WHERE id = $1`,
+      [templateId]
+    );
+    if (templateResult.rows.length === 0) {
+      throw new Error('Template not found');
+    }
+
+    // Delete fields first
+    await query(
+      `DELETE FROM finance_schema.obligation_fields WHERE template_id = $1`,
+      [templateId]
+    );
+
+    // Delete template
+    await query(
+      `DELETE FROM finance_schema.obligation_templates WHERE id = $1`,
+      [templateId]
+    );
   }
 }
 

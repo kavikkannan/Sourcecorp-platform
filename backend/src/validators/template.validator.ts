@@ -54,12 +54,19 @@ export const getCAMTemplateSchema = z.object({
   }),
 });
 
+export const deleteCAMTemplateSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid template ID'),
+  }),
+});
+
 export const createObligationTemplateSchema = z.object({
   body: z.object({
     template_name: z.string().min(1, 'Template name is required'),
-    sections: z.array(z.string()).default([]), // Sections are optional for obligation templates
+    sections: z.array(z.string()).default([]),
     fields: z.array(
       z.object({
+        section_name: z.string().min(1, 'Section name is required'),
         field_key: z.string().min(1, 'Field key is required'),
         label: z.string().min(1, 'Label is required'),
         field_type: z.enum(['text', 'number', 'currency', 'date', 'select']),
@@ -84,6 +91,7 @@ export const updateObligationTemplateSchema = z.object({
     is_active: z.boolean().optional(),
     fields: z.array(
       z.object({
+        section_name: z.string().min(1, 'Section name is required'),
         field_key: z.string().min(1, 'Field key is required'),
         label: z.string().min(1, 'Label is required'),
         field_type: z.enum(['text', 'number', 'currency', 'date', 'select']),
@@ -101,6 +109,12 @@ export const updateObligationTemplateSchema = z.object({
 export const getObligationTemplateSchema = z.object({
   params: z.object({
     id: z.string().uuid('Invalid template ID').optional(),
+  }),
+});
+
+export const deleteObligationTemplateSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid template ID'),
   }),
 });
 

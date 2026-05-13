@@ -62,6 +62,10 @@ export const templateService = {
     return response.data;
   },
 
+  async deleteCAMTemplate(id: string): Promise<void> {
+    await api.delete(`/finance/templates/cam/${id}`);
+  },
+
   // Obligation Templates
   async getAllObligationTemplates(): Promise<ObligationTemplate[]> {
     const response = await api.get('/finance/templates/obligation');
@@ -78,6 +82,7 @@ export const templateService = {
     template_name: string;
     sections: string[];
     fields: Array<{
+      section_name: string;
       field_key: string;
       label: string;
       field_type: 'text' | 'number' | 'currency' | 'date' | 'select';
@@ -100,6 +105,7 @@ export const templateService = {
       sections?: string[];
       is_active?: boolean;
       fields?: Array<{
+        section_name: string;
         field_key: string;
         label: string;
         field_type: 'text' | 'number' | 'currency' | 'date' | 'select';
@@ -114,6 +120,10 @@ export const templateService = {
   ): Promise<ObligationTemplate> {
     const response = await api.put(`/finance/templates/obligation/${id}`, data);
     return response.data;
+  },
+
+  async deleteObligationTemplate(id: string): Promise<void> {
+    await api.delete(`/finance/templates/obligation/${id}`);
   },
 };
 
