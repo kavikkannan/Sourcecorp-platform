@@ -129,6 +129,31 @@ export const taskService = {
   async deleteTask(taskId: string): Promise<void> {
     await api.delete(`/tasks/${taskId}`);
   },
+
+  async getTaskAnalytics(): Promise<{
+    total: number;
+    byStatus: { OPEN: number; IN_PROGRESS: number; COMPLETED: number };
+    byPriority: { LOW: number; MEDIUM: number; HIGH: number };
+    overdue: number;
+    completedToday: number;
+    completedThisWeek: number;
+    highPriorityOpen: number;
+  }> {
+    const response = await api.get('/tasks/analytics');
+    return response.data;
+  },
+
+  async getTaskActivity(taskId: string): Promise<{
+    id: string;
+    action: string;
+    userId: string | null;
+    userName: string | null;
+    details: any;
+    createdAt: string;
+  }[]> {
+    const response = await api.get(`/tasks/${taskId}/activity`);
+    return response.data;
+  },
 };
 
 // Constants

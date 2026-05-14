@@ -649,4 +649,108 @@ export class TaskService {
       },
     }));
   }
+
+  /**
+   * Get task analytics for a user
+   */
+  static async getTaskAnalytics(userId: string): Promise<{
+    total: number;
+    byStatus: { OPEN: number; IN_PROGRESS: number; COMPLETED: number };
+    byPriority: { LOW: number; MEDIUM: number; HIGH: number };
+    overdue: number;
+    completedToday: number;
+    completedThisWeek: number;
+    highPriorityOpen: number;
+  }> {
+    const totalResult = await query(
+      `SELECT COUNT(*) as count FROM task_schema.tasks WHERE assigned_to = $1 OR assigned_by = $1`,
+      [userId]
+    );
+
+    const statusResult = await query(
+      `SELECT status, COUNT(*) as count FROM task_schema.tasks WHERE assigned_to = $1 OR assigned_by = $1 GROUP BY status`,
+      [userId]
+    );
+
+    const priorityResult = await query(
+      `SELECT priority, COUNT(*) as count FROM task_schema.tasks WHERE assigned_to = $1 OR assigned_by = $1 GROUP BY priority`,
+      [userId]
+    );
+
+    const overdueResult = await query(
+      `SELECT COUNT(*) as count FROM task_schema.tasks WHERE (assigned_to = $1 OR assigned_by = $1) AND status != 'COMPLETED' AND due_date < CURRENT_DATE`,
+      [userId]
+    );
+
+    const completedTodayResult = await query(
+      `SELECT COUNT(*) as count FROM task_schema.tasks WHERE (assigned_to = $1 OR assigned_by = $1) AND status = 'COMPLETED' AND updated_at >= CURRENT_DATE`,
+      [userId]
+    );
+
+    const completedThisWeekResult = await query(
+      `SELECT COUNT(*) as count FROM task_schema.tasks WHERE (assigned_to = $1 OR assigned_by = $1) AND status = 'COMPLETED' AND updated_at >= CURRENT_DATE - INTERVAL '7 days'`,
+      [userId]
+    );
+
+    const highPriorityResult = await query(
+      `SELECT COUNT(*) as count FROM task_schema.tasks WHERE assigned_to = $1 AND status != 'COMPLETED' AND priority = 'HIGH'`,
+      [userId]
+    );
+
+    const byStatus = { OPEN: 0, IN_PROGRESS: 0, COMPLETED: 0 };
+    for (const row of statusResult.rows) {
+      if (row.status in byStatus) {
+        byStatus[row.status as keyof typeof byStatus] = parseInt(row.count);
+      }
+    }
+
+    const byPriority = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+    for (const row of priorityResult.rows) {
+      if (row.priority in byPriority) {
+        byPriority[row.priority as keyof typeof byPriority] = parseInt(row.count);
+      }
+    }
+
+    return {
+      total: parseInt(totalResult.rows[0]?.count || '0'),
+      byStatus,
+      byPriority,
+      overdue: parseInt(overdueResult.rows[0]?.count || '0'),
+      completedToday: parseInt(completedTodayResult.rows[0]?.count || '0'),
+      completedThisWeek: parseInt(completedThisWeekResult.rows[0]?.count || '0'),
+      highPriorityOpen: parseInt(highPriorityResult.rows[0]?.count || '0'),
+    };
+  }
+
+  /**
+   * Get task activity history from audit logs
+   */
+  static async getTaskActivity(taskId: string): Promise<{
+    id: string;
+    action: string;
+    userId: string | null;
+    userName: string | null;
+    details: any;
+    createdAt: Date;
+  }[]> {
+    const result = await query(
+      `SELECT al.id, al.action, al.user_id, al.details, al.created_at,
+              u.first_name, u.last_name
+       FROM audit_schema.audit_logs al
+       LEFT JOIN auth_schema.users u ON al.user_id = u.id
+       WHERE al.resource_type = 'task' AND al.resource_id = $1
+       ORDER BY al.created_at DESC
+       LIMIT 50`,
+      [taskId]
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      userId: row.user_id,
+      userName: row.first_name && row.last_name ? `${row.first_name} ${row.last_name}` : null,
+      details: row.details,
+      createdAt: row.created_at,
+    }));
+  }
 }

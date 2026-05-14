@@ -307,4 +307,46 @@ export class TaskController {
       throw error;
     }
   }
+
+  /**
+   * GET /api/tasks/analytics
+   * Get task analytics for the current user
+   */
+  static async getTaskAnalytics(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user?.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const analytics = await TaskService.getTaskAnalytics(req.user.userId);
+      res.json(analytics);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * GET /api/tasks/:id/activity
+   * Get activity history for a task
+   */
+  static async getTaskActivity(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user?.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const { id } = req.params;
+
+      // Verify user has access to this task
+      const task = await TaskService.getTask(id, req.user.userId);
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found or access denied' });
+      }
+
+      const activity = await TaskService.getTaskActivity(id);
+      res.json(activity);
+    } catch (error) {
+      throw error;
+    }
+  }
 }

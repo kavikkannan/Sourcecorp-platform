@@ -33,6 +33,7 @@ import {
 } from '@/lib/tasks';
 import { hierarchyService, User } from '@/lib/hierarchy';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 export default function HierarchyTasksPage() {
   const { user } = useAuth();
@@ -132,7 +133,7 @@ export default function HierarchyTasksPage() {
       const assignedTo = direction === 'UPWARD' && manager ? manager.id : formData.assignedTo;
 
       if (!assignedTo) {
-        alert(direction === 'UPWARD' ? 'Manager not found' : 'Please select a subordinate');
+        toast.error(direction === 'UPWARD' ? 'Manager not found' : 'Please select a subordinate');
         setSubmitting(false);
         return;
       }
@@ -149,12 +150,13 @@ export default function HierarchyTasksPage() {
       setCreateModalOpen(false);
       setFormData({ title: '', description: '', assignedTo: '', dueDate: '', priority: 'MEDIUM' });
       fetchTasks();
+      toast.success('Task created successfully');
     } catch (error: any) {
       const errorMessage =
         error.response?.data?.error ||
         error.response?.data?.details?.map((d: any) => d.message).join(', ') ||
         'Failed to create task';
-      alert(errorMessage);
+      toast.error(errorMessage);
       console.error('Task creation error:', error.response?.data);
     } finally {
       setSubmitting(false);
@@ -168,8 +170,9 @@ export default function HierarchyTasksPage() {
       if (selectedTask?.id === taskId) {
         setSelectedTask((prev) => (prev ? { ...prev, status } : null));
       }
+      toast.success(`Task marked as ${status.replace('_', ' ').toLowerCase()}`);
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update task status');
+      toast.error(error.response?.data?.error || 'Failed to update task status');
     }
   };
 
@@ -182,8 +185,9 @@ export default function HierarchyTasksPage() {
       setDetailModalOpen(false);
       setSelectedTask(null);
       fetchTasks();
+      toast.success('Task deleted');
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to delete task');
+      toast.error(error.response?.data?.error || 'Failed to delete task');
     } finally {
       setSubmitting(false);
     }
@@ -212,8 +216,9 @@ export default function HierarchyTasksPage() {
       setNewComment('');
       const data = await taskService.getComments(selectedTask.id);
       setComments(data);
+      toast.success('Comment added');
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to add comment');
+      toast.error(error.response?.data?.error || 'Failed to add comment');
     } finally {
       setSubmitting(false);
     }
