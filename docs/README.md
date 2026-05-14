@@ -1,143 +1,214 @@
-# SourceCorp Platform - Documentation
+# SourceCorp Solution Platform
 
-Welcome to the SourceCorp Platform documentation. This directory contains comprehensive guides and references for the platform.
-
-## 📚 Documentation Index
-
-### Getting Started
-
-- **[Setup Guide](./SETUP_GUIDE.md)** - Step-by-step instructions for setting up the platform
-  - Quick start commands
-  - Manual setup process
-  - Troubleshooting common issues
-  - Production deployment checklist
-
-### Technical Documentation
-
-- **[Architecture](./ARCHITECTURE.md)** - System architecture and design decisions
-  - Technology stack overview
-  - System architecture diagrams
-  - Data flow diagrams
-  - Security architecture
-  - Scalability considerations
-
-- **[API Reference](./API.md)** - Complete API documentation
-  - Authentication endpoints
-  - Admin API endpoints
-  - Request/response formats
-  - Error handling
-  - Authentication requirements
-
-- **[Permissions Guide](./PERMISSIONS.md)** - RBAC permissions reference
-  - Permission naming convention
-  - Complete permissions list
-  - Creating custom roles
-  - Permission enforcement
-  - Best practices
-
-### Project Information
-
-- **[Phase 1 Completion Report](./PHASE1_COMPLETE.md)** - Phase 1 deliverables and verification
-  - Exit criteria verification
-  - Technology stack
-  - Security features
-  - Testing checklist
-  - Production readiness
-
-## 🚀 Quick Links
-
-### For Developers
-- [API Reference](./API.md) - Integrate with the platform
-- [Architecture](./ARCHITECTURE.md) - Understand the system design
-- [Permissions](./PERMISSIONS.md) - Implement RBAC
-
-### For Administrators
-- [Setup Guide](./SETUP_GUIDE.md) - Deploy the platform
-- [Phase 1 Report](./PHASE1_COMPLETE.md) - Understand capabilities
-
-### For DevOps
-- [Architecture](./ARCHITECTURE.md) - Infrastructure details
-- [Setup Guide](./SETUP_GUIDE.md) - Deployment procedures
-
-## 📖 Documentation Structure
-
-```
-docs/
-├── README.md              # This file - Documentation index
-├── SETUP_GUIDE.md         # Installation and setup instructions
-├── PHASE1_COMPLETE.md     # Phase 1 completion report
-├── ARCHITECTURE.md        # System architecture and design
-├── API.md                 # API endpoint reference
-└── PERMISSIONS.md         # RBAC permissions guide
-```
-
-## 🔍 Finding Information
-
-### I want to...
-
-**Set up the platform for the first time**
-→ Start with [Setup Guide](./SETUP_GUIDE.md)
-
-**Understand how the system works**
-→ Read [Architecture](./ARCHITECTURE.md)
-
-**Integrate with the API**
-→ Check [API Reference](./API.md)
-
-**Configure user permissions**
-→ See [Permissions Guide](./PERMISSIONS.md)
-
-**Verify Phase 1 completion**
-→ Review [Phase 1 Report](./PHASE1_COMPLETE.md)
-
-**Troubleshoot issues**
-→ Check [Setup Guide - Common Issues](./SETUP_GUIDE.md#common-issues)
-
-**Deploy to production**
-→ Follow [Setup Guide - Production Deployment](./SETUP_GUIDE.md#production-deployment)
-
-## 📝 Documentation Standards
-
-All documentation follows these principles:
-
-1. **Clarity** - Clear, concise explanations
-2. **Completeness** - Comprehensive coverage of topics
-3. **Examples** - Practical code examples and use cases
-4. **Structure** - Well-organized with clear sections
-5. **Accuracy** - Kept up-to-date with codebase
-
-## 🔄 Keeping Documentation Updated
-
-Documentation is maintained alongside the codebase. When making changes:
-
-1. Update relevant documentation files
-2. Keep examples current
-3. Update version numbers if applicable
-4. Review for clarity and completeness
-
-## 📞 Support
-
-For questions or issues:
-
-1. Check the relevant documentation file
-2. Review [Setup Guide - Troubleshooting](./SETUP_GUIDE.md#common-issues)
-3. Check the main [README.md](../README.md)
-4. Contact the development team
-
-## 🎯 Documentation Roadmap
-
-Future documentation additions:
-
-- [ ] Development guide
-- [ ] Testing guide
-- [ ] Deployment automation guide
-- [ ] Monitoring and observability guide
-- [ ] Security best practices
-- [ ] Performance optimization guide
+**Enterprise Internal Platform for Loan Origination, CRM, and Team Management**
 
 ---
 
-**Last Updated:** December 2024  
-**Version:** 1.0.0
+## Project Overview
 
+SourceCorp Solution Platform is a comprehensive internal enterprise application built for a financial services organization. It streamlines loan case management, team hierarchy, task assignment, financial assessments (CAM, Obligation Sheets, Eligibility), announcements, and employee recognitions through a modern web interface.
 
+The platform implements strict Role-Based Access Control (RBAC) with hierarchical team structures, audit logging, and real-time productivity tools.
+
+---
+
+## Features
+
+| Module | Features |
+|--------|----------|
+| **Authentication** | JWT-based auth with refresh tokens, cookie support, RBAC |
+| **Admin** | User/Role/Permission/Team management, Audit logs, Announcements, Recognitions |
+| **CRM** | Case lifecycle management, document uploads, notes, notifications, customer detail sheets, change request approvals |
+| **Hierarchy** | Manager-subordinate relationships, visual org chart, task routing |
+| **Tasks** | Hierarchical task assignment (downward/upward), status tracking, comments |
+| **Financial Tools** | CAM templates, Obligation sheets, Eligibility calculations, CSV/Excel/PDF exports |
+| **Dashboard** | Dynamic announcements, monthly achievers, best employee recognitions |
+| **Chat** | Internal messaging system |
+| **Notes** | Personal and case-linked notes |
+
+---
+
+## Tech Stack
+
+### Frontend
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Animation**: Framer Motion
+- **Icons**: Lucide React
+- **Notifications**: Sonner (toast)
+- **Drag & Drop**: @dnd-kit
+- **Date Handling**: date-fns
+
+### Backend
+- **Runtime**: Node.js + Express 5
+- **Language**: TypeScript
+- **Database**: PostgreSQL 16 (with JSONB, CTEs, triggers)
+- **Cache**: Redis 7 (ioredis)
+- **Queue**: BullMQ (Redis-based)
+- **Validation**: Zod
+- **Auth**: JWT (jsonwebtoken) + bcryptjs
+- **Uploads**: Multer (memory storage)
+- **Exports**: exceljs, pdfkit, archiver
+- **Logging**: Winston
+
+### Infrastructure
+- **Reverse Proxy**: NGINX
+- **Containerization**: Docker + Docker Compose
+- **Database Schemas**: auth_schema, admin_schema, audit_schema, crm_schema, finance_schema, task_schema
+
+---
+
+## Architecture Summary
+
+```mermaid
+graph TD
+    Client[Browser Client] -->|HTTPS| NGINX[NGINX Reverse Proxy]
+    NGINX -->|/api/*| Backend[Express Backend :4000]
+    NGINX -->|/*| Frontend[Next.js Frontend :3000]
+    Backend --> PostgreSQL[(PostgreSQL 16)]
+    Backend --> Redis[(Redis 7)]
+    Backend -->|Queue| BullMQ[BullMQ Workers]
+```
+
+---
+
+## Installation
+
+### Prerequisites
+- Node.js 20+
+- PostgreSQL 16
+- Redis 7
+- Docker (optional)
+
+### Local Setup
+
+```bash
+# 1. Clone repository
+git clone <repo-url>
+cd souercecorp-platform\ v1.0.0
+
+# 2. Backend setup
+cd backend
+cp .env.example .env  # Configure DB, Redis, JWT secrets
+npm install
+npm run migrate        # Run all database migrations
+npm run dev            # Start on :4000
+
+# 3. Frontend setup (new terminal)
+cd ../frontend
+npm install
+npm run dev            # Start on :3000
+```
+
+### Docker Setup
+
+```bash
+docker-compose up --build
+```
+
+---
+
+## Environment Variables
+
+### Backend (.env)
+```env
+NODE_ENV=development
+PORT=4000
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=sourcecorp
+DB_USER=sourcecorp_user
+DB_PASSWORD=
+REDIS_HOST=localhost
+REDIS_PORT=6379
+JWT_SECRET=your-secret
+JWT_REFRESH_SECRET=your-refresh-secret
+JWT_EXPIRES_IN=24h
+JWT_REFRESH_EXPIRES_IN=7d
+CORS_ORIGIN=http://localhost:3000
+```
+
+---
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment instructions.
+
+---
+
+## Security Overview
+
+- JWT authentication with short-lived access tokens and refresh tokens
+- Role-based access control (RBAC) with 60+ granular permissions
+- Helmet.js for HTTP security headers
+- CORS with credentials
+- SQL injection prevention via parameterized queries
+- Input validation via Zod schemas
+- Audit logging for all critical operations
+- Password hashing with bcrypt
+
+See [SECURITY.md](SECURITY.md) for detailed security documentation.
+
+---
+
+## Folder Structure
+
+```
+├── backend/
+│   ├── src/
+│   │   ├── app.ts              # Express app configuration
+│   │   ├── index.ts            # Server entry point
+│   │   ├── config/             # Environment & logger
+│   │   ├── controllers/        # 15 API controllers
+│   │   ├── services/           # 11 business services
+│   │   ├── routes/             # 8 route modules
+│   │   ├── middleware/         # Auth, RBAC, Validation, Error
+│   │   ├── validators/         # Zod schemas
+│   │   ├── db/                 # Pool, Redis, schema, migrations
+│   │   ├── types/              # TypeScript interfaces
+│   │   ├── workers/            # Background job workers
+│   │   └── assets/             # Static assets
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── app/                # Next.js App Router pages
+│   │   ├── components/         # Reusable UI components
+│   │   ├── contexts/           # React contexts (Auth)
+│   │   ├── hooks/              # Custom React hooks
+│   │   ├── lib/                # API clients & services
+│   │   └── utils/              # Utility functions
+│   └── package.json
+├── nginx/                      # Reverse proxy config
+├── docs/                       # Documentation
+└── docker-compose.yml
+```
+
+---
+
+## API Summary
+
+| Base Path | Description |
+|-----------|-------------|
+| `/api/auth` | Login, refresh, logout, me |
+| `/api/admin` | Users, roles, permissions, teams, hierarchy, announcements, recognitions, audit logs |
+| `/api/crm` | Cases, assignments, documents, notes, notifications, customer detail sheets, exports |
+| `/api/finance` | Eligibility, CAM, Obligation, exports |
+| `/api/finance/templates` | CAM & Obligation template management |
+| `/api/users` | User hierarchy endpoints |
+| `/api/tasks` | Task CRUD, status updates, comments |
+| `/api/notes` | Personal & case notes |
+
+See [API.md](API.md) for full API documentation.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+---
+
+## License
+
+Proprietary - SourceCorp Solution Internal Use Only

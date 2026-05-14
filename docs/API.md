@@ -1,23 +1,14 @@
 # API Documentation
 
-Base URL: `http://localhost/api`
-
 ## Authentication
 
-All protected endpoints require a JWT token in the Authorization header:
-
-```
-Authorization: Bearer <access_token>
-```
-
-### POST /auth/login
-
-Login and get access tokens.
+### POST /api/auth/login
+Login with email and password.
 
 **Request:**
 ```json
 {
-  "email": "admin@sourcecorp.com",
+  "email": "user@example.com",
   "password": "password123"
 }
 ```
@@ -25,468 +16,272 @@ Login and get access tokens.
 **Response:**
 ```json
 {
-  "accessToken": "eyJhbGc...",
-  "refreshToken": "eyJhbGc...",
+  "accessToken": "jwt-string",
+  "refreshToken": "jwt-string",
   "user": {
     "id": "uuid",
-    "email": "admin@sourcecorp.com",
-    "firstName": "Admin",
-    "lastName": "User"
+    "email": "user@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "roles": ["Admin"]
   }
 }
 ```
 
-### POST /auth/refresh
-
+### POST /api/auth/refresh
 Refresh access token using refresh token.
 
-**Request:**
-```json
-{
-  "refreshToken": "eyJhbGc..."
-}
-```
+**Request:** Cookie: `refreshToken`
 
 **Response:**
 ```json
 {
-  "accessToken": "eyJhbGc...",
-  "refreshToken": "eyJhbGc..."
+  "accessToken": "new-jwt-string"
 }
 ```
 
-### POST /auth/logout
+### GET /api/auth/me
+Get current authenticated user.
 
-Logout and invalidate tokens.
+**Headers:** `Authorization: Bearer <token>`
 
-**Headers:** Authorization required
+---
 
-**Response:**
-```json
-{
-  "message": "Logged out successfully"
-}
-```
+## Admin
 
-### GET /auth/me
+### Users
 
-Get current user information with roles and permissions.
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/users` | `admin.users.create` | Create user |
+| GET | `/api/admin/users` | `admin.users.read` | List users |
+| GET | `/api/admin/users/:id` | `admin.users.read` | Get user |
+| PATCH | `/api/admin/users/:id` | `admin.users.update` | Update user |
+| DELETE | `/api/admin/users/:id` | `admin.users.delete` | Delete user |
+| POST | `/api/admin/users/:userId/roles` | `admin.users.assign_role` | Assign role |
+| DELETE | `/api/admin/users/:userId/roles/:roleId` | `admin.users.remove_role` | Remove role |
 
-**Headers:** Authorization required
+### Roles
 
-**Response:**
-```json
-{
-  "id": "uuid",
-  "email": "admin@sourcecorp.com",
-  "firstName": "Admin",
-  "lastName": "User",
-  "isActive": true,
-  "roles": ["Admin"],
-  "permissions": ["admin.users.read", "admin.users.create", ...]
-}
-```
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/roles` | `admin.roles.create` | Create role |
+| GET | `/api/admin/roles` | `admin.roles.read` | List roles |
+| GET | `/api/admin/roles/:id` | `admin.roles.read` | Get role |
+| PATCH | `/api/admin/roles/:id` | `admin.roles.update` | Update role |
+| DELETE | `/api/admin/roles/:id` | `admin.roles.delete` | Delete role |
+| POST | `/api/admin/roles/:roleId/permissions` | `admin.roles.assign_permission` | Assign permission |
+| DELETE | `/api/admin/roles/:roleId/permissions/:permissionId` | `admin.roles.remove_permission` | Remove permission |
+
+### Teams
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/teams` | `admin.teams.create` | Create team |
+| GET | `/api/admin/teams` | `admin.teams.read` | List teams |
+| GET | `/api/admin/teams/:id` | `admin.teams.read` | Get team |
+| PATCH | `/api/admin/teams/:id` | `admin.teams.update` | Update team |
+| DELETE | `/api/admin/teams/:id` | `admin.teams.delete` | Delete team |
+| POST | `/api/admin/teams/:teamId/members` | `admin.teams.add_member` | Add member |
+| DELETE | `/api/admin/teams/:teamId/members/:userId` | `admin.teams.remove_member` | Remove member |
+
+### Announcements
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/announcements` | `admin.announcements.create` | Create (multipart: image) |
+| GET | `/api/admin/announcements` | `admin.announcements.read` | List |
+| GET | `/api/admin/announcements/:id` | `admin.announcements.read` | Get |
+| PATCH | `/api/admin/announcements/:id` | `admin.announcements.update` | Update (multipart) |
+| DELETE | `/api/admin/announcements/:id` | `admin.announcements.delete` | Delete |
+| GET | `/api/announcements/:id/image` | Public | Get image |
+
+### Recognitions
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/recognitions` | `admin.recognitions.create` | Create (multipart: image) |
+| GET | `/api/admin/recognitions` | `admin.recognitions.read` | List |
+| GET | `/api/admin/recognitions/:id` | `admin.recognitions.read` | Get |
+| PATCH | `/api/admin/recognitions/:id` | `admin.recognitions.update` | Update (multipart) |
+| DELETE | `/api/admin/recognitions/:id` | `admin.recognitions.delete` | Delete |
+| GET | `/api/recognitions/:id/image` | Public | Get image |
+
+### Hierarchy
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/admin/hierarchy/assign` | `admin.hierarchy.manage` | Assign manager |
+| DELETE | `/api/admin/hierarchy/remove` | `admin.hierarchy.manage` | Remove manager |
+| GET | `/api/admin/hierarchy/tree` | `admin.hierarchy.manage` | Get full tree |
+
+### Audit Logs
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/admin/audit-logs` | `admin.audit.read` | List audit logs |
+
+---
+
+## CRM
+
+### Cases
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases` | `crm.case.create` | Create case (multipart: documents) |
+| GET | `/api/crm/cases` | `crm.case.view` | List cases (RBAC filtered) |
+| GET | `/api/crm/cases/:id` | `crm.case.view` | Get case |
+| DELETE | `/api/crm/cases/:id` | `crm.case.delete` | Delete case |
+| POST | `/api/crm/cases/:id/assign` | `crm.case.assign` | Assign case |
+| POST | `/api/crm/cases/:id/status` | `crm.case.update_status` | Update status |
+
+### Documents
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/:id/documents` | `crm.case.upload_document` | Upload |
+| GET | `/api/crm/cases/:id/documents` | `crm.case.view` | List |
+| GET | `/api/crm/documents/:documentId` | `crm.case.view` | Download |
+
+### Notes
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/:id/notes` | `crm.case.add_note` | Add note (multipart) |
+| GET | `/api/crm/cases/:id/notes` | `crm.case.view` | List notes |
+
+### Notifications
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/:id/schedule` | `crm.case.add_note` | Schedule notification |
+| GET | `/api/crm/cases/:id/notifications` | `crm.case.view` | Case notifications |
+| GET | `/api/crm/notifications` | `crm.case.view` | My notifications |
+| GET | `/api/crm/notifications/unread-count` | `crm.case.view` | Unread count |
+| PATCH | `/api/crm/notifications/:id/read` | `crm.case.view` | Mark read/unread |
+| PATCH | `/api/crm/notifications/:id/completion` | `crm.case.view` | Mark completed |
+
+### Customer Detail Sheets
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/:id/customer-detail-sheet` | `crm.case.upload_document` | Upload Excel |
+| GET | `/api/crm/cases/:id/customer-detail-sheet` | `crm.case.view` | Get sheet |
+
+### Change Requests
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/:id/customer-detail-change-request` | `crm.case.customer_details.request_change` | Request change |
+| GET | `/api/crm/cases/:id/customer-detail-change-requests` | `crm.case.view` | List requests |
+| GET | `/api/crm/customer-detail-change-requests/pending` | `crm.case.customer_details.modify` | Pending for me |
+| GET | `/api/crm/customer-detail-change-requests/approvers` | `crm.case.customer_details.request_change` | Get approvers |
+| POST | `/api/crm/customer-detail-change-requests/:id/approve` | `crm.case.customer_details.modify` | Approve |
+| POST | `/api/crm/customer-detail-change-requests/:id/reject` | `crm.case.customer_details.modify` | Reject |
+
+### Exports
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/crm/cases/export` | `crm.case.export` | Initiate export |
+| GET | `/api/crm/cases/export/:jobId` | `crm.case.export` | Job status |
+| GET | `/api/crm/cases/export/download/:jobId` | `crm.case.export` | Download archive |
+
+---
+
+## Finance
+
+### Eligibility
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/finance/eligibility/calculate` | `finance.eligibility.calculate` | Calculate |
+| GET | `/api/finance/eligibility/:caseId` | `finance.eligibility.view` | Get result |
+
+### CAM
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/finance/cam/template/:loanType` | `finance.cam.create` | Get template |
+| POST | `/api/finance/cam` | `finance.cam.create` | Create entry |
+| GET | `/api/finance/cam/:caseId` | `finance.cam.view` | Get entry |
+
+### Obligation
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/finance/obligation/template` | `finance.obligation.create` | Get template |
+| POST | `/api/finance/obligation` | `finance.obligation.create` | Create sheet |
+| GET | `/api/finance/obligation/:caseId` | `finance.obligation.view` | Get sheet |
+
+### Exports
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/finance/export/eligibility/:caseId` | `finance.export` | Export eligibility |
+| GET | `/api/finance/export/obligation/:caseId` | `finance.export` | Export obligation |
+| GET | `/api/finance/export/cam/:caseId` | `finance.export` | Export CAM |
+
+---
+
+## Templates (Admin)
+
+### CAM Templates
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/finance/templates/cam` | `finance.template.manage` | Create |
+| GET | `/api/finance/templates/cam` | `finance.template.manage` | List |
+| GET | `/api/finance/templates/cam/:id` | `finance.template.manage` | Get |
+| GET | `/api/finance/templates/cam/loan-type/:loanType` | `finance.template.manage` | By loan type |
+| PUT | `/api/finance/templates/cam/:id` | `finance.template.manage` | Update |
+| DELETE | `/api/finance/templates/cam/:id` | `finance.template.manage` | Delete |
+
+### Obligation Templates
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/finance/templates/obligation` | `finance.template.manage` | Create |
+| GET | `/api/finance/templates/obligation` | `finance.template.manage` | List |
+| GET | `/api/finance/templates/obligation/:id` | `finance.template.manage` | Get |
+| PUT | `/api/finance/templates/obligation/:id` | `finance.template.manage` | Update |
+| DELETE | `/api/finance/templates/obligation/:id` | `finance.template.manage` | Delete |
+
+---
+
+## Tasks
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/tasks/my` | Any authenticated | My tasks |
+| GET | `/api/tasks/assigned-to-me` | Any authenticated | Assigned to me |
+| GET | `/api/tasks/assigned-by-me` | Any authenticated | Assigned by me |
+| GET | `/api/tasks/subordinates` | `task.view.subordinates` | Subordinate tasks |
+| POST | `/api/tasks` | Any task permission | Create task |
+| PUT | `/api/tasks/:id/status` | `task.update.status` | Update status |
+| POST | `/api/tasks/:id/comments` | Any authenticated | Add comment |
+| GET | `/api/tasks/:id/comments` | Any authenticated | Get comments |
+| GET | `/api/tasks/:id` | Any authenticated | Get task |
+| DELETE | `/api/tasks/:id` | Any authenticated | Delete task |
+
+---
+
+## Notes
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/notes` | `note.create` | Create note |
+| GET | `/api/notes/my` | Any authenticated | My notes |
+| GET | `/api/notes/case/:caseId` | `note.view.case` | Case notes |
+| GET | `/api/notes/:id` | Any authenticated | Get note |
+| DELETE | `/api/notes/:id` | Any authenticated | Delete note |
 
 ---
 
 ## Users
 
-### GET /admin/users
-
-Get all users.
-
-**Permission:** `admin.users.read`
-
-**Response:**
-```json
-[
-  {
-    "id": "uuid",
-    "email": "user@example.com",
-    "firstName": "John",
-    "lastName": "Doe",
-    "isActive": true,
-    "roles": ["Admin", "Manager"],
-    "createdAt": "2024-01-01T00:00:00.000Z"
-  }
-]
-```
-
-### GET /admin/users/:id
-
-Get user by ID.
-
-**Permission:** `admin.users.read`
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "email": "user@example.com",
-  "firstName": "John",
-  "lastName": "Doe",
-  "isActive": true,
-  "roles": [
-    {"id": "uuid", "name": "Admin"}
-  ],
-  "teams": ["Engineering", "Leadership"],
-  "createdAt": "2024-01-01T00:00:00.000Z"
-}
-```
-
-### POST /admin/users
-
-Create a new user.
-
-**Permission:** `admin.users.create`
-
-**Request:**
-```json
-{
-  "email": "newuser@example.com",
-  "password": "securepassword123",
-  "firstName": "Jane",
-  "lastName": "Smith"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "email": "newuser@example.com",
-  "firstName": "Jane",
-  "lastName": "Smith",
-  "isActive": true,
-  "createdAt": "2024-01-01T00:00:00.000Z"
-}
-```
-
-### PATCH /admin/users/:id
-
-Update user information.
-
-**Permission:** `admin.users.update`
-
-**Request:**
-```json
-{
-  "firstName": "Jane",
-  "lastName": "Doe",
-  "isActive": false
-}
-```
-
-### POST /admin/users/:userId/roles
-
-Assign role to user.
-
-**Permission:** `admin.users.assign_role`
-
-**Request:**
-```json
-{
-  "roleId": "uuid"
-}
-```
-
-### DELETE /admin/users/:userId/roles/:roleId
-
-Remove role from user.
-
-**Permission:** `admin.users.remove_role`
-
----
-
-## Roles
-
-### GET /admin/roles
-
-Get all roles.
-
-**Permission:** `admin.roles.read`
-
-### GET /admin/roles/:id
-
-Get role by ID with permissions.
-
-**Permission:** `admin.roles.read`
-
-### POST /admin/roles
-
-Create a new role.
-
-**Permission:** `admin.roles.create`
-
-**Request:**
-```json
-{
-  "name": "Manager",
-  "description": "Team manager role"
-}
-```
-
-### PATCH /admin/roles/:id
-
-Update role.
-
-**Permission:** `admin.roles.update`
-
-### DELETE /admin/roles/:id
-
-Delete role.
-
-**Permission:** `admin.roles.delete`
-
-### POST /admin/roles/:roleId/permissions
-
-Assign permission to role.
-
-**Permission:** `admin.roles.assign_permission`
-
-**Request:**
-```json
-{
-  "permissionId": "uuid"
-}
-```
-
-### DELETE /admin/roles/:roleId/permissions/:permissionId
-
-Remove permission from role.
-
-**Permission:** `admin.roles.remove_permission`
-
----
-
-## Permissions
-
-### GET /admin/permissions
-
-Get all permissions.
-
-**Permission:** `admin.permissions.read`
-
-### POST /admin/permissions
-
-Create a new permission.
-
-**Permission:** `admin.permissions.create`
-
-**Request:**
-```json
-{
-  "name": "custom.resource.action",
-  "description": "Description of permission"
-}
-```
-
----
-
-## Teams
-
-### GET /admin/teams
-
-Get all teams.
-
-**Permission:** `admin.teams.read`
-
-### GET /admin/teams/:id
-
-Get team by ID with members.
-
-**Permission:** `admin.teams.read`
-
-### POST /admin/teams
-
-Create a new team.
-
-**Permission:** `admin.teams.create`
-
-**Request:**
-```json
-{
-  "name": "Engineering",
-  "description": "Engineering team"
-}
-```
-
-### PATCH /admin/teams/:id
-
-Update team.
-
-**Permission:** `admin.teams.update`
-
-### DELETE /admin/teams/:id
-
-Delete team.
-
-**Permission:** `admin.teams.delete`
-
-### POST /admin/teams/:teamId/members
-
-Add member to team.
-
-**Permission:** `admin.teams.add_member`
-
-**Request:**
-```json
-{
-  "userId": "uuid"
-}
-```
-
-### DELETE /admin/teams/:teamId/members/:userId
-
-Remove member from team.
-
-**Permission:** `admin.teams.remove_member`
-
----
-
-## Announcements
-
-### GET /admin/announcements
-
-Get all announcements.
-
-**Permission:** `admin.announcements.read`
-
-**Query Parameters:**
-- `activeOnly=true` - Only return active announcements
-
-### GET /admin/announcements/:id
-
-Get announcement by ID.
-
-**Permission:** `admin.announcements.read`
-
-### POST /admin/announcements
-
-Create announcement.
-
-**Permission:** `admin.announcements.create`
-
-**Request:**
-```json
-{
-  "title": "Important Update",
-  "content": "Please read this important announcement..."
-}
-```
-
-### PATCH /admin/announcements/:id
-
-Update announcement.
-
-**Permission:** `admin.announcements.update`
-
-**Request:**
-```json
-{
-  "title": "Updated Title",
-  "content": "Updated content",
-  "isActive": false
-}
-```
-
-### DELETE /admin/announcements/:id
-
-Delete announcement.
-
-**Permission:** `admin.announcements.delete`
-
----
-
-## Audit Logs
-
-### GET /admin/audit-logs
-
-Get audit logs.
-
-**Permission:** `admin.audit.read`
-
-**Query Parameters:**
-- `limit` (default: 50) - Number of logs to return
-- `offset` (default: 0) - Pagination offset
-- `userId` - Filter by user ID
-- `action` - Filter by action
-- `resourceType` - Filter by resource type
-
-**Response:**
-```json
-{
-  "logs": [
-    {
-      "id": "uuid",
-      "action": "admin.users.create",
-      "resourceType": "user",
-      "resourceId": "uuid",
-      "userName": "Admin User",
-      "userEmail": "admin@example.com",
-      "ipAddress": "192.168.1.1",
-      "details": {},
-      "createdAt": "2024-01-01T00:00:00.000Z"
-    }
-  ],
-  "total": 150,
-  "limit": 50,
-  "offset": 0
-}
-```
-
----
-
-## Error Responses
-
-All endpoints may return the following error responses:
-
-**401 Unauthorized:**
-```json
-{
-  "error": "Access token required"
-}
-```
-
-**403 Forbidden:**
-```json
-{
-  "error": "Insufficient permissions",
-  "required": "admin.users.create"
-}
-```
-
-**400 Bad Request:**
-```json
-{
-  "error": "Validation error",
-  "details": [
-    {
-      "field": "email",
-      "message": "Invalid email format"
-    }
-  ]
-}
-```
-
-**404 Not Found:**
-```json
-{
-  "error": "Resource not found"
-}
-```
-
-**409 Conflict:**
-```json
-{
-  "error": "Resource already exists"
-}
-```
-
-**500 Internal Server Error:**
-```json
-{
-  "error": "Internal server error"
-}
-```
-
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/users/me/manager` | Required | My manager |
+| GET | `/api/users/me/subordinates` | Required | My subordinates |

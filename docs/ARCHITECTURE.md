@@ -1,336 +1,187 @@
-# Architecture Overview
+# Architecture Documentation
 
-## System Architecture
+## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         Client Browser                       │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ HTTP/HTTPS
-                      │ Port 80/443
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Nginx Reverse Proxy                      │
-│  - Routes /api/* to backend                                  │
-│  - Routes /* to frontend                                     │
-│  - SSL termination (production)                              │
-│  - Static file serving                                       │
-└─────────┬─────────────────────────────────┬─────────────────┘
-          │                                 │
-          │ Internal Network                │
-          │                                 │
-    ┌─────▼─────────┐             ┌────────▼────────┐
-    │   Frontend    │             │    Backend      │
-    │   Next.js     │             │    Express      │
-    │   Port 3000   │             │    Port 4000    │
-    │               │             │                 │
-    │ - React UI    │             │ - REST API      │
-    │ - SSR/SSG     │             │ - Auth Logic    │
-    │ - Route Guards│             │ - RBAC          │
-    └───────────────┘             │ - Validation    │
-                                  │ - Business Logic│
-                                  └────┬───────┬────┘
-                                       │       │
-                         ┌─────────────┘       └──────────────┐
-                         │                                     │
-                    ┌────▼─────────┐                   ┌──────▼──────┐
-                    │  PostgreSQL  │                   │    Redis    │
-                    │   Port 5432  │                   │  Port 6379  │
-                    │   (internal) │                   │  (internal) │
-                    │              │                   │             │
-                    │ - User data  │                   │ - Sessions  │
-                    │ - RBAC data  │                   │ - Tokens    │
-                    │ - Audit logs │                   │ - Cache     │
-                    └──────────────┘                   └─────────────┘
+```mermaid
+graph TB
+    subgraph Client
+        Browser[Browser/Chrome]
+    end
+
+    subgraph Edge
+        NGINX[NGINX Reverse Proxy<br/>SSL Termination<br/>Static File Serving]
+    end
+
+    subgraph Application
+        Frontend[Next.js 15 Frontend<br/>App Router<br/>Tailwind CSS]
+        Backend[Express 5 Backend<br/>TypeScript<br/>REST API]
+    end
+
+    subgraph Data
+        PostgreSQL[(PostgreSQL 16<br/>6 Schemas<br/>JSONB + Triggers)]
+        Redis[(Redis 7<br/>Sessions + Cache + Queue)]
+        FileSystem[File System<br/>Uploads / Exports]
+    end
+
+    subgraph Workers
+        ExportWorker[Export Worker<br/>BullMQ]
+    end
+
+    Browser -->|HTTPS 443| NGINX
+    NGINX -->|/api/*| Backend
+    NGINX -->|/_next/*<br/>/| Frontend
+    Backend -->|pg Pool| PostgreSQL
+    Backend -->|ioredis| Redis
+    Backend -->|BullMQ| ExportWorker
+    ExportWorker -->|Read/Write| FileSystem
+    Backend -->|Multer| FileSystem
 ```
 
-## Technology Stack
+## Request Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant C as Browser Client
+    participant N as NGINX
+    participant F as Next.js Frontend
+    participant B as Express Backend
+    participant M as Middleware Chain
+    participant R as Route Handler
+    participant S as Service Layer
+    participant DB as PostgreSQL
+
+    C->>N: HTTPS Request
+    N->>F: Static/SSR Page (GET /)
+    F-->>C: HTML + Hydrated React
+    C->>N: API Call (GET /api/crm/cases)
+    N->>B: Proxy to :4000
+    B->>M: helmet → cors → cookieParser
+    B->>M: express.json() → express.urlencoded()
+    B->>M: authenticateToken (JWT verify)
+    B->>M: requirePermission (RBAC check)
+    B->>M: validate (Zod schema)
+    B->>R: Route handler
+    R->>S: Service method
+    S->>DB: Parameterized query
+    DB-->>S: Result rows
+    S-->>R: Business object
+    R-->>B: JSON response
+    B-->>N: HTTP 200 + JSON
+    N-->>C: Response
+```
+
+## Database Schema Architecture
+
+```mermaid
+erDiagram
+    auth_schema_users ||--o{ auth_schema_user_roles : has
+    auth_schema_roles ||--o{ auth_schema_user_roles : assigned_to
+    auth_schema_roles ||--o{ auth_schema_role_permissions : has
+    auth_schema_permissions ||--o{ auth_schema_role_permissions : granted_to
+    auth_schema_users ||--o{ auth_schema_user_hierarchy : manages
+    auth_schema_users ||--o{ auth_schema_user_hierarchy : reports_to
+    auth_schema_teams ||--o{ auth_schema_team_members : includes
+    auth_schema_users ||--o{ auth_schema_team_members : member_of
+
+    crm_schema_cases ||--o{ crm_schema_case_assignments : assigned
+    auth_schema_users ||--o{ crm_schema_case_assignments : assignee
+    crm_schema_cases ||--o{ crm_schema_documents : contains
+    crm_schema_cases ||--o{ crm_schema_case_notes : has
+    crm_schema_cases ||--o{ crm_schema_case_status_history : tracks
+
+    finance_schema_cam_templates ||--o{ finance_schema_cam_fields : defines
+    finance_schema_cam_templates ||--o{ finance_schema_cam_entries : used_in
+    finance_schema_obligation_templates ||--o{ finance_schema_obligation_fields : defines
+    finance_schema_obligation_templates ||--o{ finance_schema_obligation_sheets : used_in
+    finance_schema_obligation_sheets ||--o{ finance_schema_obligation_items : contains
+
+    task_schema_tasks ||--o{ task_schema_task_comments : has
+```
+
+## Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant B as Backend
+    participant DB as PostgreSQL
+    participant R as Redis
+
+    C->>B: POST /api/auth/login<br/>{email, password}
+    B->>DB: SELECT user + roles
+    DB-->>B: User + role names
+    B->>DB: SELECT permissions for roles
+    DB-->>B: Permission list
+    B->>B: bcrypt.compare(password)
+    B->>B: jwt.sign(accessToken, 24h)
+    B->>B: jwt.sign(refreshToken, 7d)
+    B->>R: Store refresh token mapping
+    B-->>C: {accessToken, refreshToken, user}<br/>Set-Cookie: refreshToken
+```
+
+## Service Layer Design
+
+The backend follows a **Controller-Service** pattern:
+
+| Layer | Responsibility | Example |
+|-------|---------------|---------|
+| **Route** | URL mapping + middleware chain | `crm.routes.ts` |
+| **Controller** | HTTP handling, request/response | `CRMController.createCase` |
+| **Service** | Business logic, database operations | `CRMService.createCase` |
+| **Validator** | Input validation (Zod) | `createCaseSchema` |
+| **Middleware** | Cross-cutting concerns | `authenticateToken`, `requirePermission` |
+
+## Caching Strategy
+
+| Data | Cache Layer | TTL | Invalidation |
+|------|------------|-----|--------------|
+| User permissions | Redis | Session lifetime | On role change |
+| Export job status | Redis (BullMQ) | Until completion | Job completion |
+| Session tokens | Redis | 7 days | Logout |
+
+## State Management
 
 ### Frontend
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Animation**: Framer Motion
-- **Icons**: Lucide React
-- **HTTP Client**: Axios
-- **Validation**: Zod
+- **Auth state**: React Context (`AuthContext`) with localStorage persistence
+- **Server state**: Direct API calls via service functions (no React Query/SWR)
+- **Form state**: useState hooks
+- **Global UI**: Component-level state
 
 ### Backend
-- **Runtime**: Node.js 20
-- **Framework**: Express.js
-- **Language**: TypeScript
-- **Database Client**: node-postgres (pg)
-- **Cache Client**: redis
-- **Authentication**: JWT (jsonwebtoken)
-- **Password Hashing**: bcryptjs
-- **Validation**: Zod
-- **Logging**: Winston
+- **Stateless**: No server-side sessions (JWT-based)
+- **RBAC cache**: Permissions cached in `req.userPermissions` per request
 
-### Infrastructure
-- **Container Runtime**: Docker
-- **Orchestration**: Docker Compose
-- **Reverse Proxy**: Nginx
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
+## Scalability Design
 
-## Data Flow
+- **Horizontal**: NGINX can load-balance multiple backend instances
+- **Database**: Read replicas possible; JSONB for flexible schema evolution
+- **Exports**: Async processing via BullMQ workers to avoid blocking requests
+- **File uploads**: Memory storage (Multer) — for production, switch to S3/streaming
+- **Frontend**: Static export capability via Next.js
 
-### Authentication Flow
+## Multi-Service Interaction
 
-```
-1. User submits credentials → Frontend
-2. Frontend → POST /api/auth/login → Backend
-3. Backend validates credentials → PostgreSQL
-4. Backend generates JWT tokens
-5. Backend stores refresh token → Redis
-6. Backend logs action → Audit table
-7. Backend returns tokens ← Frontend
-8. Frontend stores tokens in localStorage
-9. Frontend redirects to dashboard
+```mermaid
+graph LR
+    CRM[CRM Service] -->|Case ID| Finance[Finance Service]
+    CRM -->|User ID| Hierarchy[Hierarchy Service]
+    CRM -->|Case IDs| Export[Export Service]
+    Task[Task Service] -->|User ID| Hierarchy
+    Auth[Auth Middleware] -->|User + Perms| All[All Services]
+    Audit[Audit Service] -->|Logs| PostgreSQL
 ```
 
-### Protected Request Flow
+## Security Layers
 
+```mermaid
+graph TD
+    A[Client Request] --> B[HTTPS/TLS]
+    B --> C[NGINX]
+    C --> D[Helmet Headers]
+    D --> E[CORS Policy]
+    E --> F[JWT Authentication]
+    F --> G[RBAC Permission Check]
+    G --> H[Zod Input Validation]
+    H --> I[Parameterized SQL]
+    I --> J[Audit Logging]
 ```
-1. User action → Frontend
-2. Frontend adds Authorization header (JWT)
-3. Frontend → API request → Backend
-4. Backend: authenticateToken middleware
-   - Verifies JWT signature
-   - Checks user exists and is active
-5. Backend: requirePermission middleware
-   - Queries user permissions from DB
-   - Checks required permission
-6. Backend: Controller logic
-   - Business logic execution
-   - Database operations
-7. Backend: Audit logging (if write operation)
-8. Backend → Response → Frontend
-9. Frontend updates UI
-```
-
-### Token Refresh Flow
-
-```
-1. Access token expires (15 min)
-2. Frontend receives 401 error
-3. Frontend → POST /api/auth/refresh with refresh token
-4. Backend verifies refresh token
-5. Backend checks token in Redis
-6. Backend generates new token pair
-7. Backend updates Redis
-8. Backend → New tokens → Frontend
-9. Frontend retries original request
-```
-
-## Database Schema
-
-### auth_schema
-
-**users**
-- id (UUID, PK)
-- email (unique)
-- password_hash
-- first_name
-- last_name
-- is_active
-- created_at
-- updated_at
-
-**roles**
-- id (UUID, PK)
-- name (unique)
-- description
-- created_at
-- updated_at
-
-**permissions**
-- id (UUID, PK)
-- name (unique)
-- description
-- created_at
-- updated_at
-
-**role_permissions** (junction table)
-- id (UUID, PK)
-- role_id (FK → roles)
-- permission_id (FK → permissions)
-- created_at
-
-**user_roles** (junction table)
-- id (UUID, PK)
-- user_id (FK → users)
-- role_id (FK → roles)
-- created_at
-
-**teams**
-- id (UUID, PK)
-- name
-- description
-- created_at
-- updated_at
-
-**team_members** (junction table)
-- id (UUID, PK)
-- team_id (FK → teams)
-- user_id (FK → users)
-- created_at
-
-### admin_schema
-
-**announcements**
-- id (UUID, PK)
-- title
-- content
-- author_id (FK → users)
-- is_active
-- created_at
-- updated_at
-
-### audit_schema
-
-**audit_logs**
-- id (UUID, PK)
-- user_id (FK → users, nullable)
-- action
-- resource_type
-- resource_id (nullable)
-- details (JSONB)
-- ip_address
-- user_agent
-- created_at
-
-## Security Architecture
-
-### Authentication
-- JWT-based stateless authentication
-- Access tokens: 15-minute expiry
-- Refresh tokens: 7-day expiry, stored in Redis
-- Secure password hashing with bcrypt (10 rounds)
-
-### Authorization
-- Role-Based Access Control (RBAC)
-- Permission checks at API level
-- Frontend checks for UX only (not trusted)
-- Permissions: `resource.action` format
-
-### Network Security
-- PostgreSQL not exposed externally
-- Redis not exposed externally
-- All services on internal Docker network
-- Only Nginx exposed on port 80
-
-### Data Security
-- Passwords never stored in plain text
-- JWT secrets stored in environment variables
-- Database credentials in environment variables
-- Audit trail for all write operations
-
-### API Security
-- CORS configuration
-- Helmet.js security headers
-- Request validation with Zod
-- Rate limiting (to be implemented in Phase 2)
-
-## Scalability Considerations
-
-### Current Architecture (Phase 1)
-- Single instance of each service
-- Suitable for 100-500 concurrent users
-- Vertical scaling by increasing Docker resources
-
-### Future Scaling (Phase 2+)
-- Multiple backend instances behind load balancer
-- Redis cluster for session management
-- PostgreSQL read replicas
-- CDN for static assets
-- Horizontal pod autoscaling (Kubernetes)
-
-## Monitoring & Observability
-
-### Logging
-- Winston structured logging in backend
-- All API requests logged
-- Error stack traces captured
-- Audit logs in database
-
-### Health Checks
-- `/health` endpoint on backend
-- Docker health checks on all services
-- Service dependency checks
-
-### Metrics (to be added)
-- Request latency
-- Error rates
-- Active users
-- Database connection pool
-- Redis cache hit rate
-
-## Deployment
-
-### Development
-```bash
-docker-compose up -d
-```
-
-### Production
-- Use environment-specific `.env` files
-- Enable HTTPS in nginx
-- Configure external database (RDS, Cloud SQL)
-- Configure external Redis (ElastiCache, Cloud Memorystore)
-- Set up CI/CD pipeline
-- Configure monitoring and alerting
-
-## API Design Principles
-
-1. **RESTful**: Standard HTTP methods (GET, POST, PATCH, DELETE)
-2. **Consistent**: Predictable URL patterns
-3. **Secure**: Authentication and authorization on all protected routes
-4. **Validated**: Request validation with Zod schemas
-5. **Documented**: Clear error messages and status codes
-6. **Audited**: All write operations generate audit logs
-
-## Code Organization
-
-### Backend Structure
-```
-backend/
-├── src/
-│   ├── config/         # Environment and configuration
-│   ├── db/             # Database connection and migrations
-│   ├── middleware/     # Auth, RBAC, validation, error handling
-│   ├── controllers/    # Request handlers
-│   ├── routes/         # API route definitions
-│   ├── services/       # Business logic
-│   ├── validators/     # Zod schemas
-│   ├── types/          # TypeScript types
-│   ├── utils/          # Helper functions
-│   ├── app.ts          # Express app setup
-│   └── index.ts        # Entry point
-```
-
-### Frontend Structure
-```
-frontend/
-├── src/
-│   ├── app/            # Next.js App Router pages
-│   ├── components/     # Reusable UI components
-│   ├── contexts/       # React contexts (Auth)
-│   ├── lib/            # Utilities and API client
-│   └── styles/         # Global styles
-```
-
-## Future Enhancements
-
-Phase 2 and beyond may include:
-- WebSocket support for real-time features
-- File upload and storage
-- Advanced search and filtering
-- Bulk operations
-- Export functionality (CSV, PDF)
-- Email notifications
-- Two-factor authentication
-- API rate limiting
-- GraphQL API option
-- Mobile app (React Native)
-

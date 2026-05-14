@@ -1,407 +1,516 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { redirect } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
+import Link from 'next/link';
+import {
+  Shield,
+  BarChart3,
+  Users,
+  FileText,
+  CheckCircle,
+  Lock,
+  ArrowRight,
+  Zap,
+  Layers,
+  Clock,
+  Globe,
+  ChevronRight,
+  Menu,
+  X,
+  TrendingUp,
+  Award,
+  Sparkles,
+} from 'lucide-react';
 
-export default function Home() {
-  // Set to true to enable maintenance mode
-  const isMaintenanceMode = false;
+// ===================================================================
+// NAVBAR
+// ===================================================================
 
-  if (!isMaintenanceMode) {
-    redirect('/login');
-  }
+function Navbar() {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  return <MaintenancePage />;
-}
-
-function MaintenancePage() {
-  const [dots, setDots] = useState('');
-  const [progress, setProgress] = useState(0);
-
-  // Animated dots
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
-    }, 500);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Animated progress bar (loops)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress((prev) => (prev >= 100 ? 0 : prev + 1));
-    }, 80);
-    return () => clearInterval(interval);
+    const onScroll = () => setScrolled(window.scrollY > 10);
+    window.addEventListener('scroll', onScroll);
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-
-        body {
-          font-family: 'Inter', sans-serif;
-          background: #020817;
-          overflow: hidden;
-        }
-
-        .page {
-          min-height: 100vh;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          background: linear-gradient(135deg, #020817 0%, #0a1628 50%, #020817 100%);
-          overflow: hidden;
-        }
-
-        /* Animated background orbs */
-        .orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-          opacity: 0.15;
-          animation: float 8s ease-in-out infinite;
-        }
-        .orb-1 {
-          width: 600px; height: 600px;
-          background: radial-gradient(circle, #3b82f6, transparent);
-          top: -200px; left: -200px;
-          animation-delay: 0s;
-        }
-        .orb-2 {
-          width: 500px; height: 500px;
-          background: radial-gradient(circle, #8b5cf6, transparent);
-          bottom: -150px; right: -150px;
-          animation-delay: -3s;
-        }
-        .orb-3 {
-          width: 300px; height: 300px;
-          background: radial-gradient(circle, #06b6d4, transparent);
-          top: 50%; left: 50%;
-          transform: translate(-50%, -50%);
-          animation-delay: -6s;
-        }
-
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) scale(1); }
-          50% { transform: translateY(-30px) scale(1.05); }
-        }
-
-        /* Grid overlay */
-        .grid-overlay {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(59, 130, 246, 0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(59, 130, 246, 0.04) 1px, transparent 1px);
-          background-size: 60px 60px;
-        }
-
-        /* Particles */
-        .particle {
-          position: absolute;
-          width: 2px; height: 2px;
-          background: rgba(59, 130, 246, 0.6);
-          border-radius: 50%;
-          animation: sparkle 4s ease-in-out infinite;
-        }
-        @keyframes sparkle {
-          0%, 100% { opacity: 0; transform: scale(0); }
-          50% { opacity: 1; transform: scale(1); }
-        }
-
-        /* Card */
-        .card {
-          position: relative;
-          z-index: 10;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 24px;
-          padding: 60px 56px;
-          max-width: 580px;
-          width: 90%;
-          text-align: center;
-          backdrop-filter: blur(20px);
-          box-shadow:
-            0 0 0 1px rgba(255,255,255,0.05),
-            0 40px 80px rgba(0,0,0,0.5),
-            inset 0 1px 0 rgba(255,255,255,0.1);
-          animation: fadeUp 0.8s ease-out both;
-        }
-
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(40px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Icon */
-        .icon-wrapper {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 80px; height: 80px;
-          background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2));
-          border: 1px solid rgba(59,130,246,0.3);
-          border-radius: 20px;
-          margin-bottom: 32px;
-          box-shadow: 0 0 30px rgba(59,130,246,0.15);
-          animation: pulse-glow 2s ease-in-out infinite;
-        }
-        @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 30px rgba(59,130,246,0.15); }
-          50% { box-shadow: 0 0 50px rgba(59,130,246,0.35); }
-        }
-
-        .icon-svg {
-          color: #60a5fa;
-          width: 36px; height: 36px;
-        }
-
-        /* Badge */
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: rgba(59,130,246,0.1);
-          border: 1px solid rgba(59,130,246,0.25);
-          color: #93c5fd;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          padding: 6px 14px;
-          border-radius: 100px;
-          margin-bottom: 24px;
-        }
-        .badge-dot {
-          width: 6px; height: 6px;
-          background: #3b82f6;
-          border-radius: 50%;
-          animation: blink 1.2s ease-in-out infinite;
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.2; }
-        }
-
-        /* Heading */
-        .heading {
-          font-size: 42px;
-          font-weight: 800;
-          line-height: 1.15;
-          color: #ffffff;
-          margin-bottom: 16px;
-          letter-spacing: -0.02em;
-        }
-        .heading span {
-          background: linear-gradient(135deg, #60a5fa, #a78bfa);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
-        .subtitle {
-          font-size: 16px;
-          color: rgba(255,255,255,0.45);
-          line-height: 1.7;
-          margin-bottom: 40px;
-          font-weight: 400;
-        }
-
-        /* Progress section */
-        .progress-section {
-          margin-bottom: 36px;
-        }
-        .progress-label {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-        .progress-text {
-          font-size: 12px;
-          color: rgba(255,255,255,0.4);
-          font-weight: 500;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
-        }
-        .progress-bar-track {
-          height: 4px;
-          background: rgba(255,255,255,0.06);
-          border-radius: 100px;
-          overflow: hidden;
-        }
-        .progress-bar-fill {
-          height: 100%;
-          border-radius: 100px;
-          background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-          box-shadow: 0 0 10px rgba(59,130,246,0.5);
-          transition: width 0.08s linear;
-        }
-
-        /* Status pills */
-        .pills {
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-          flex-wrap: wrap;
-          margin-bottom: 40px;
-        }
-        .pill {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 16px;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 100px;
-          font-size: 12px;
-          color: rgba(255,255,255,0.5);
-          font-weight: 500;
-        }
-        .pill-dot {
-          width: 5px; height: 5px;
-          border-radius: 50%;
-        }
-        .dot-green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
-        .dot-yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
-
-        /* Divider */
-        .divider {
-          height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
-          margin: 0 0 32px;
-        }
-
-        /* Footer */
-        .footer-text {
-          font-size: 13px;
-          color: rgba(255,255,255,0.2);
-          font-weight: 400;
-        }
-        .footer-text strong {
-          color: rgba(255,255,255,0.4);
-          font-weight: 600;
-        }
-
-        /* Status indicator */
-        .status-indicator {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          margin-bottom: 40px;
-        }
-        .status-line {
-          height: 1px;
-          width: 40px;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15));
-        }
-        .status-line-r {
-          background: linear-gradient(90deg, rgba(255,255,255,0.15), transparent);
-        }
-        .status-label {
-          font-size: 12px;
-          color: rgba(255,255,255,0.3);
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          font-weight: 500;
-        }
-      `}</style>
-
-      <div className="page">
-        {/* Background orbs */}
-        <div className="orb orb-1" />
-        <div className="orb orb-2" />
-        <div className="orb orb-3" />
-
-        {/* Grid */}
-        <div className="grid-overlay" />
-
-        {/* Scattered particles */}
-        {[...Array(12)].map((_, i) => (
-          <div
-            key={i}
-            className="particle"
-            style={{
-              left: `${10 + i * 8}%`,
-              top: `${15 + (i % 5) * 18}%`,
-              animationDelay: `${i * 0.35}s`,
-              animationDuration: `${3 + (i % 3)}s`,
-            }}
-          />
-        ))}
-
-        {/* Main card */}
-        <div className="card">
-          {/* Icon */}
-          <div className="icon-wrapper">
-            <svg className="icon-svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"
-              />
-            </svg>
+    <nav
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? 'bg-white/90 backdrop-blur-xl shadow-sm border-b border-slate-100'
+          : 'bg-transparent'
+      }`}
+    >
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center">
+            <Shield className="w-4 h-4 text-white" />
           </div>
+          <span className="text-slate-900 font-bold text-lg tracking-tight">Sourcecorp</span>
+        </Link>
 
-          {/* Badge */}
-          <div className="badge">
-            <div className="badge-dot" />
-            Scheduled Maintenance
+        <div className="hidden md:flex items-center gap-8">
+          <a href="#features" className="text-sm text-slate-500 hover:text-slate-900 transition-colors font-medium">
+            Features
+          </a>
+          <a href="#stats" className="text-sm text-slate-500 hover:text-slate-900 transition-colors font-medium">
+            Platform
+          </a>
+          <Link
+            href="/login"
+            className="text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 px-5 py-2.5 rounded-lg transition-colors"
+          >
+            Sign In
+          </Link>
+        </div>
+
+        <button className="md:hidden text-slate-700 p-2" onClick={() => setMobileOpen(!mobileOpen)}>
+          {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden bg-white border-b border-slate-100 overflow-hidden"
+          >
+            <div className="px-6 py-4 space-y-3">
+              <a href="#features" onClick={() => setMobileOpen(false)} className="block text-sm text-slate-600 hover:text-slate-900 font-medium">
+                Features
+              </a>
+              <a href="#stats" onClick={() => setMobileOpen(false)} className="block text-sm text-slate-600 hover:text-slate-900 font-medium">
+                Platform
+              </a>
+              <Link
+                href="/login"
+                onClick={() => setMobileOpen(false)}
+                className="block text-center text-sm font-semibold text-white bg-slate-900 px-5 py-2.5 rounded-lg"
+              >
+                Sign In
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </nav>
+  );
+}
+
+// ===================================================================
+// HERO SECTION
+// ===================================================================
+
+function HeroSection() {
+  return (
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white">
+      {/* Subtle gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-blue-50/60 via-white to-white" />
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-violet-100/40 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/4" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-100/40 rounded-full blur-[120px] translate-y-1/3 -translate-x-1/4" />
+
+      {/* Dot pattern */}
+      <div
+        className="absolute inset-0 opacity-[0.4]"
+        style={{
+          backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+        }}
+      />
+
+      <div className="relative z-10 max-w-5xl mx-auto px-6 text-center pt-24 pb-16">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+        >
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-xs font-semibold text-blue-700 mb-8">
+            <Sparkles className="w-3.5 h-3.5" />
+            Enterprise Business Management Platform
           </div>
+        </motion.div>
 
-          {/* Heading */}
-          <h1 className="heading">
-            We&apos;re <span>upgrading</span><br />for you
-          </h1>
+        <motion.h1
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.08, ease: 'easeOut' }}
+          className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-slate-900 tracking-tight leading-[1.08] mb-6"
+        >
+          Streamline Your
+          <br />
+          <span className="bg-gradient-to-r from-blue-600 via-violet-600 to-purple-600 bg-clip-text text-transparent">
+            Business Operations
+          </span>
+        </motion.h1>
 
-          <p className="subtitle">
-            Our platform is currently undergoing scheduled maintenance
-            to deliver a better experience. We&apos;ll be back shortly.
+        <motion.p
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.16, ease: 'easeOut' }}
+          className="text-lg sm:text-xl text-slate-500 max-w-2xl mx-auto mb-10 leading-relaxed"
+        >
+          A unified platform for CRM, financial tools, task management,
+          and team collaboration — built for modern enterprises.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.24, ease: 'easeOut' }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+        >
+          <Link
+            href="/login"
+            className="group inline-flex items-center gap-2 px-8 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
+          >
+            Get Started
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+          <a
+            href="#features"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-slate-700 font-semibold rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all"
+          >
+            Explore Features
+            <ChevronRight className="w-4 h-4" />
+          </a>
+        </motion.div>
+
+        {/* Trust badges */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 0.5 }}
+          className="mt-16 flex flex-wrap items-center justify-center gap-8 text-slate-400 text-sm"
+        >
+          <span className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-slate-400" />
+            Bank-Level Security
+          </span>
+          <span className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-slate-400" />
+            Role-Based Access
+          </span>
+          <span className="flex items-center gap-2">
+            <Globe className="w-4 h-4 text-slate-400" />
+            Cloud Native
+          </span>
+        </motion.div>
+
+        {/* Hero visual - abstract dashboard preview */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.9, delay: 0.4 }}
+          className="mt-16 relative max-w-4xl mx-auto"
+        >
+          <div className="relative rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10 overflow-hidden">
+            {/* Browser chrome */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-400" />
+                <div className="w-3 h-3 rounded-full bg-amber-400" />
+                <div className="w-3 h-3 rounded-full bg-green-400" />
+              </div>
+              <div className="flex-1 mx-4">
+                <div className="max-w-xs mx-auto h-6 bg-white rounded-md border border-slate-200 flex items-center px-3 text-[10px] text-slate-400">
+                  platform.sourcecorp.com
+                </div>
+              </div>
+            </div>
+            {/* Dashboard mockup */}
+            <div className="p-6 grid grid-cols-12 gap-4">
+              {/* Sidebar */}
+              <div className="col-span-3 space-y-3">
+                <div className="h-8 w-32 bg-slate-100 rounded-lg" />
+                <div className="h-2 w-20 bg-slate-100 rounded" />
+                <div className="pt-4 space-y-2">
+                  {[1,2,3,4,5].map(i => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded bg-blue-100" />
+                      <div className="h-2 w-16 bg-slate-100 rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Main content */}
+              <div className="col-span-9 space-y-4">
+                <div className="flex gap-4">
+                  {[1,2,3].map(i => (
+                    <div key={i} className="flex-1 h-20 bg-slate-50 rounded-xl border border-slate-100 p-3">
+                      <div className="h-2 w-12 bg-slate-200 rounded mb-2" />
+                      <div className="h-6 w-16 bg-slate-200 rounded" />
+                    </div>
+                  ))}
+                </div>
+                <div className="h-40 bg-slate-50 rounded-xl border border-slate-100 p-4">
+                  <div className="h-2 w-24 bg-slate-200 rounded mb-4" />
+                  <div className="space-y-2">
+                    {[1,2,3].map(i => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-100" />
+                        <div className="flex-1 h-2 bg-slate-100 rounded" />
+                        <div className="w-12 h-2 bg-slate-100 rounded" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="h-32 bg-slate-50 rounded-xl border border-slate-100 p-4">
+                    <div className="h-2 w-20 bg-slate-200 rounded mb-3" />
+                    <div className="h-16 bg-blue-50 rounded-lg" />
+                  </div>
+                  <div className="h-32 bg-slate-50 rounded-xl border border-slate-100 p-4">
+                    <div className="h-2 w-20 bg-slate-200 rounded mb-3" />
+                    <div className="h-16 bg-violet-50 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Glow effect */}
+          <div className="absolute -inset-4 bg-gradient-to-t from-blue-500/5 to-transparent rounded-3xl -z-10 blur-xl" />
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// ===================================================================
+// FEATURES SECTION
+// ===================================================================
+
+const FEATURES = [
+  {
+    icon: Users,
+    title: 'CRM Management',
+    description: 'Track leads, manage cases, and monitor customer interactions with a full-featured CRM pipeline.',
+    color: 'bg-blue-50 text-blue-600',
+  },
+  {
+    icon: BarChart3,
+    title: 'Financial Tools',
+    description: 'Credit appraisal, obligation sheets, and eligibility calculators with dynamic template builders.',
+    color: 'bg-emerald-50 text-emerald-600',
+  },
+  {
+    icon: FileText,
+    title: 'Task Management',
+    description: 'Hierarchical task assignment with upward and downward delegation, status tracking, and notifications.',
+    color: 'bg-amber-50 text-amber-600',
+  },
+  {
+    icon: Shield,
+    title: 'Role-Based Access',
+    description: 'Granular permissions with users, roles, teams, and audit logging for complete security control.',
+    color: 'bg-violet-50 text-violet-600',
+  },
+  {
+    icon: Layers,
+    title: 'Reporting Hierarchy',
+    description: 'Visual org chart with manager-subordinate relationships, history tracking, and batch operations.',
+    color: 'bg-rose-50 text-rose-600',
+  },
+  {
+    icon: Clock,
+    title: 'Audit & Compliance',
+    description: 'Comprehensive audit trails, change history, and compliance-ready reporting for every action.',
+    color: 'bg-slate-100 text-slate-600',
+  },
+];
+
+function FeatureCard({ feature, index }: { feature: (typeof FEATURES)[0]; index: number }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-60px' });
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 30 }}
+      animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, delay: index * 0.08 }}
+      className="group p-6 rounded-2xl bg-white border border-slate-100 hover:border-slate-200 hover:shadow-lg hover:shadow-slate-900/5 transition-all duration-300"
+    >
+      <div className={`w-11 h-11 rounded-xl ${feature.color} flex items-center justify-center mb-4`}>
+        <feature.icon className="w-5 h-5" />
+      </div>
+      <h3 className="text-slate-900 font-semibold text-lg mb-2">{feature.title}</h3>
+      <p className="text-slate-500 text-sm leading-relaxed">{feature.description}</p>
+    </motion.div>
+  );
+}
+
+function FeaturesSection() {
+  return (
+    <section id="features" className="relative py-24 sm:py-32 bg-slate-50/50">
+      <div className="max-w-7xl mx-auto px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-16"
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-600 mb-4">
+            <Layers className="w-3.5 h-3.5" />
+            Everything You Need
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+            Powerful Tools for{' '}
+            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+              Modern Teams
+            </span>
+          </h2>
+          <p className="text-slate-500 max-w-2xl mx-auto">
+            An integrated suite of business applications designed to work seamlessly together.
           </p>
+        </motion.div>
 
-          {/* Progress */}
-          <div className="progress-section">
-            <div className="progress-label">
-              <span className="progress-text">Progress</span>
-              <span className="progress-text">{progress}%</span>
-            </div>
-            <div className="progress-bar-track">
-              <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-
-          {/* Status pills */}
-          <div className="pills">
-            <div className="pill">
-              <div className="pill-dot dot-green" />
-              Database{dots}
-            </div>
-            <div className="pill">
-              <div className="pill-dot dot-yellow" />
-              Services updating
-            </div>
-            <div className="pill">
-              <div className="pill-dot dot-green" />
-              Security OK
-            </div>
-          </div>
-
-          <div className="divider" />
-
-          {/* Footer */}
-          <p className="footer-text">
-            <strong>vfinserve.in</strong> · Sourcecorp Solution Platform
-          </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {FEATURES.map((feature, i) => (
+            <FeatureCard key={feature.title} feature={feature} index={i} />
+          ))}
         </div>
       </div>
-    </>
+    </section>
+  );
+}
+
+// ===================================================================
+// STATS SECTION
+// ===================================================================
+
+const STATS = [
+  { label: 'Active Users', value: '500+', icon: Users },
+  { label: 'Cases Managed', value: '10K+', icon: TrendingUp },
+  { label: 'Uptime', value: '99.9%', icon: CheckCircle },
+  { label: 'Modules', value: '6', icon: Layers },
+];
+
+function StatsSection() {
+  return (
+    <section id="stats" className="relative py-20 bg-white border-y border-slate-100">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
+          {STATS.map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: i * 0.1 }}
+              className="text-center"
+            >
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 text-blue-600 mb-4">
+                <stat.icon className="w-5 h-5" />
+              </div>
+              <div className="text-4xl sm:text-5xl font-extrabold text-slate-900 mb-2">{stat.value}</div>
+              <div className="text-sm text-slate-500 font-medium">{stat.label}</div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ===================================================================
+// CTA SECTION
+// ===================================================================
+
+function CTASection() {
+  return (
+    <section className="relative py-24 sm:py-32 bg-slate-50/50 overflow-hidden">
+      <div className="absolute inset-0">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-100/50 rounded-full blur-[100px]" />
+      </div>
+
+      <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+        >
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 mb-6 shadow-lg shadow-blue-900/10">
+            <Award className="w-7 h-7 text-white" />
+          </div>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-6">
+            Ready to Transform Your
+            <br />
+            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+              Business Workflow?
+            </span>
+          </h2>
+          <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-10">
+            Join the growing number of enterprises using Sourcecorp Solution Platform
+            to streamline operations and drive growth.
+          </p>
+          <Link
+            href="/login"
+            className="group inline-flex items-center gap-2 px-8 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
+          >
+            Access Platform
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// ===================================================================
+// FOOTER
+// ===================================================================
+
+function Footer() {
+  return (
+    <footer className="bg-white border-t border-slate-100 py-12">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center">
+              <Shield className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-slate-900 font-bold text-sm">Sourcecorp Solution</span>
+          </div>
+          <p className="text-slate-400 text-sm">
+            &copy; {new Date().getFullYear()} Sourcecorp Solution Platform. All rights reserved.
+          </p>
+          <div className="flex items-center gap-6 text-sm text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" />
+              Secure
+            </span>
+            <span className="flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5" />
+              Reliable
+            </span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ===================================================================
+// MAIN PAGE
+// ===================================================================
+
+export default function LandingPage() {
+  return (
+    <main className="bg-white min-h-screen text-slate-900 overflow-x-hidden">
+      <Navbar />
+      <HeroSection />
+      <FeaturesSection />
+      <StatsSection />
+      <CTASection />
+      <Footer />
+    </main>
   );
 }
