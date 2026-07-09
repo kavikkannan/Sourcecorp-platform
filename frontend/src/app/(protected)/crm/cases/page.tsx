@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Plus, Search, Eye, Briefcase, X, Upload, Users, User, Filter, XCircle, FileSpreadsheet, Calendar } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
@@ -19,17 +19,19 @@ import { format } from 'date-fns';
 
 export default function CasesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { hasPermission } = useAuth();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => Math.max(0, parseInt(searchParams.get('page') || '1', 10) - 1));
   const [limit] = useState(20);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [userFilter, setUserFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [monthFilter, setMonthFilter] = useState<string>('');
-  const [viewType, setViewType] = useState<'individual' | 'team'>('individual');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [userFilter, setUserFilter] = useState(searchParams.get('user') || '');
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
+  const [monthFilter, setMonthFilter] = useState<string>(searchParams.get('month') || '');
+  const [viewType, setViewType] = useState<'individual' | 'team'>((searchParams.get('view') as 'individual' | 'team') || 'individual');
   const [subordinates, setSubordinates] = useState<HierarchyUser[]>([]);
   const [loadingSubordinates, setLoadingSubordinates] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -118,11 +120,36 @@ export default function CasesPage() {
     loadCases();
   }, [loadCases]);
 
+  // Keep track of initial view type mount so we don't wipe out URL state on load
+  const isInitialViewType = useRef(true);
   useEffect(() => {
+    if (isInitialViewType.current) {
+      isInitialViewType.current = false;
+      return;
+    }
     // Reset user filter when switching view types
     setUserFilter('');
     setPage(0);
   }, [viewType]);
+
+  // Sync filters and pagination to URL query params so they survive browser back/forward
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (page > 0) params.set('page', String(page + 1));
+    if (statusFilter) params.set('status', statusFilter);
+    if (userFilter) params.set('user', userFilter);
+    if (monthFilter) params.set('month', monthFilter);
+    if (viewType !== 'individual') params.set('view', viewType);
+    if (searchTerm) params.set('search', searchTerm);
+
+    const query = params.toString();
+    const newUrl = query ? `${pathname}?${query}` : pathname;
+    const currentUrl = `${pathname}${window.location.search}`;
+
+    if (newUrl !== currentUrl) {
+      router.replace(newUrl, { scroll: false });
+    }
+  }, [page, statusFilter, userFilter, monthFilter, viewType, searchTerm, pathname, router]);
 
   const handleCreateCase = async () => {
     // Clear previous errors

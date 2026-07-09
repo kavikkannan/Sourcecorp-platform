@@ -842,7 +842,7 @@ export default function CaseDetailPage() {
         title={caseData.case_number}
         description={`${getStatusLabel(caseData.current_status)} - ${caseData.customer_name}`}
         action={
-          <Button variant="secondary" onClick={() => router.push('/crm/cases')}>
+          <Button variant="secondary" onClick={() => router.back()}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Cases
           </Button>
