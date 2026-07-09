@@ -10,10 +10,10 @@ export const loginSchema = z.object({
 export const refreshTokenSchema = z.object({
   body: z.object({
     refreshToken: z.string().optional(),
-  }),
+  }).default({}),
   cookies: z.object({
     refreshToken: z.string().optional(),
-  }),
+  }).default({}),
 }).refine((data) => data.body.refreshToken || data.cookies.refreshToken, {
   message: 'Refresh token is required',
 });
