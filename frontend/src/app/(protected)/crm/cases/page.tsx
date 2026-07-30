@@ -510,8 +510,9 @@ export default function CasesPage() {
               Filters:
             </div>
 
-            {/* Month Filter - Beautiful Design */}
-            <div className="w-full sm:w-52">
+            {/* Month Filter */}
+            <div className="w-full sm:w-52 space-y-1.5">
+              <label className="block text-xs font-medium text-gray-600">Month</label>
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none z-10" />
                 <select
@@ -520,7 +521,7 @@ export default function CasesPage() {
                     setMonthFilter(e.target.value);
                     setPage(0);
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 appearance-none cursor-pointer hover:border-gray-400 transition-colors"
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 appearance-none cursor-pointer hover:border-gray-400 transition-colors"
                 >
                   <option value="">All Months</option>
                   {(() => {
@@ -551,49 +552,43 @@ export default function CasesPage() {
 
             <div className="w-full sm:w-48">
               <Select
-                label=""
+                label="Status"
+                placeholder="All Statuses"
                 value={statusFilter}
                 onChange={(e: any) => {
                   setStatusFilter(e.target.value);
                   setPage(0);
                 }}
                 className="w-full"
-                options={[
-                  { value: '', label: 'All Statuses' },
-                  ...CASE_STATUSES.map(status => ({ value: status.value, label: status.label }))
-                ]}
+                options={CASE_STATUSES.map(status => ({ value: status.value, label: status.label }))}
               />
             </div>
 
             <div className="w-full sm:w-44">
               <Select
-                label=""
+                label="Priority"
+                placeholder="All Priorities"
                 value={priorityFilter}
                 onChange={(e: any) => {
                   setPriorityFilter(e.target.value);
                   setPage(0);
                 }}
                 className="w-full"
-                options={[
-                  { value: '', label: 'All Priorities' },
-                  ...CASE_PRIORITIES.map(p => ({ value: p.value, label: p.label }))
-                ]}
+                options={CASE_PRIORITIES.map(p => ({ value: p.value, label: p.label }))}
               />
             </div>
 
             <div className="w-full sm:w-48">
               <Select
-                label=""
+                label="Loan Type"
+                placeholder="All Loan Types"
                 value={loanTypeFilter}
                 onChange={(e: any) => {
                   setLoanTypeFilter(e.target.value);
                   setPage(0);
                 }}
                 className="w-full"
-                options={[
-                  { value: '', label: 'All Loan Types' },
-                  ...LOAN_TYPES.map(type => ({ value: type.value, label: type.label }))
-                ]}
+                options={LOAN_TYPES.map(type => ({ value: type.value, label: type.label }))}
               />
             </div>
 
@@ -601,7 +596,8 @@ export default function CasesPage() {
             {viewType === 'team' && (
               <div className="w-full sm:w-56">
                 <Select
-                  label=""
+                  label="Employee"
+                  placeholder={loadingSubordinates ? 'Loading users...' : 'All Users'}
                   value={userFilter}
                   onChange={(e: any) => {
                     setUserFilter(e.target.value);
@@ -609,13 +605,10 @@ export default function CasesPage() {
                   }}
                   className="w-full"
                   disabled={loadingSubordinates}
-                  options={[
-                    { value: '', label: loadingSubordinates ? 'Loading users...' : 'All Users' },
-                    ...subordinates.map((user: any) => ({
-                      value: user.id,
-                      label: `${user.first_name} ${user.last_name}`
-                    }))
-                  ]}
+                  options={subordinates.map((user: any) => ({
+                    value: user.id,
+                    label: `${user.first_name} ${user.last_name}`
+                  }))}
                 />
               </div>
             )}

@@ -8,6 +8,7 @@ interface SelectOption {
 
 interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'value'> {
   label?: string;
+  placeholder?: string;
   options: SelectOption[];
   error?: string;
   value?: string | number | readonly string[] | any;
@@ -15,20 +16,23 @@ interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>
 
 export default function Select({
   label,
+  placeholder = 'Select...',
   options,
   error,
   className = '',
   ...props
 }: SelectProps) {
+  const hasEmptyOption = options.some((option) => !option.value);
+
   return (
-    <div className="space-y-2">
-      {label && <label className="block text-sm font-medium text-gray-700">{label}</label>}
+    <div className="space-y-1.5">
+      {label && <label className="block text-xs font-medium text-gray-600">{label}</label>}
       <select
         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition ${error ? 'border-red-500' : 'border-gray-300'
           } ${className}`}
         {...props}
       >
-        <option value="">Select...</option>
+        {!hasEmptyOption && <option value="">{placeholder}</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}

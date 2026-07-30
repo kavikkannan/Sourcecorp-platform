@@ -897,6 +897,9 @@ export class CRMController {
       if (error.message === 'Case not found') {
         return res.status(404).json({ error: error.message });
       }
+      if (error.message?.includes('empty or has no worksheets')) {
+        return res.status(400).json({ error: error.message });
+      }
       throw error;
     }
   }

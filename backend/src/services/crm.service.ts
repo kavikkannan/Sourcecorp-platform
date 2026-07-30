@@ -1450,6 +1450,9 @@ export class CRMService {
     await workbook.xlsx.load(excelBuffer);
 
     const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      throw new Error('Uploaded Excel file is empty or has no worksheets');
+    }
     const detailData: any = {};
 
     // Field mapping based on the image provided
