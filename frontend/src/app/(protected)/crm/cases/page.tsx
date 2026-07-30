@@ -11,7 +11,7 @@ import Select from '@/components/Select';
 import Modal from '@/components/Modal';
 import Dropdown from '@/components/Dropdown';
 import { useAuth } from '@/contexts/AuthContext';
-import { crmService, Case, CreateCaseData, LOAN_TYPES, CASE_STATUSES, getStatusColor, getStatusLabel } from '@/lib/crm';
+import { crmService, Case, CreateCaseData, LOAN_TYPES, CASE_STATUSES, CASE_PRIORITIES, getStatusColor, getStatusLabel, getPriorityColor } from '@/lib/crm';
 import { hierarchyService, User as HierarchyUser } from '@/lib/hierarchy';
 import { getErrorMessage } from '@/utils/errorHandler';
 import { formatIndianCurrency } from '@/utils/formatNumber';
@@ -28,9 +28,11 @@ export default function CasesPage() {
   const [page, setPage] = useState(() => Math.max(0, parseInt(searchParams.get('page') || '1', 10) - 1));
   const [limit] = useState(20);
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [priorityFilter, setPriorityFilter] = useState(searchParams.get('priority') || '');
   const [userFilter, setUserFilter] = useState(searchParams.get('user') || '');
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [monthFilter, setMonthFilter] = useState<string>(searchParams.get('month') || '');
+  const [loanTypeFilter, setLoanTypeFilter] = useState<string>(searchParams.get('loan_type') || '');
   const [viewType, setViewType] = useState<'individual' | 'team'>((searchParams.get('view') as 'individual' | 'team') || 'individual');
   const [subordinates, setSubordinates] = useState<HierarchyUser[]>([]);
   const [loadingSubordinates, setLoadingSubordinates] = useState(false);
@@ -45,6 +47,8 @@ export default function CasesPage() {
     loan_type: 'PERSONAL',
     loan_amount: 0,
     source_type: null,
+    priority: 'MEDIUM',
+    reminder_date: null,
     documents: [],
   });
   const [loanAmountInput, setLoanAmountInput] = useState('');
@@ -66,6 +70,12 @@ export default function CasesPage() {
     errorText?: string;
   }>({ status: 'idle', progress: 0 });
   const [exportScope, setExportScope] = useState<'selected' | 'my' | 'team'>('selected');
+
+  // Priority & Reminder quick-edit state
+  const [priorityModalCase, setPriorityModalCase] = useState<Case | null>(null);
+  const [reminderModalCase, setReminderModalCase] = useState<Case | null>(null);
+  const [reminderDateInput, setReminderDateInput] = useState('');
+  const [quickEditLoading, setQuickEditLoading] = useState(false);
 
   const loadSubordinates = useCallback(async () => {
     if (viewType !== 'team') {
@@ -91,6 +101,8 @@ export default function CasesPage() {
         status: statusFilter || undefined,
         view_type: viewType,
         created_by: userFilter || undefined,
+        loan_type: loanTypeFilter || undefined,
+        priority: priorityFilter || undefined,
         month: monthFilter || undefined,
         limit,
         offset: page * limit,
@@ -110,7 +122,7 @@ export default function CasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, viewType, userFilter, monthFilter, limit]);
+  }, [page, statusFilter, viewType, userFilter, loanTypeFilter, priorityFilter, monthFilter, limit]);
 
   useEffect(() => {
     loadSubordinates();
@@ -137,7 +149,9 @@ export default function CasesPage() {
     const params = new URLSearchParams();
     if (page > 0) params.set('page', String(page + 1));
     if (statusFilter) params.set('status', statusFilter);
+    if (priorityFilter) params.set('priority', priorityFilter);
     if (userFilter) params.set('user', userFilter);
+    if (loanTypeFilter) params.set('loan_type', loanTypeFilter);
     if (monthFilter) params.set('month', monthFilter);
     if (viewType !== 'individual') params.set('view', viewType);
     if (searchTerm) params.set('search', searchTerm);
@@ -149,7 +163,7 @@ export default function CasesPage() {
     if (newUrl !== currentUrl) {
       router.replace(newUrl, { scroll: false });
     }
-  }, [page, statusFilter, userFilter, monthFilter, viewType, searchTerm, pathname, router]);
+  }, [page, statusFilter, priorityFilter, userFilter, loanTypeFilter, monthFilter, viewType, searchTerm, pathname, router]);
 
   const handleCreateCase = async () => {
     // Clear previous errors
@@ -256,6 +270,8 @@ export default function CasesPage() {
         loan_type: 'PERSONAL',
         loan_amount: 0,
         source_type: null,
+        priority: 'MEDIUM',
+        reminder_date: null,
         documents: [],
       });
       setLoanAmountInput('');
@@ -301,6 +317,33 @@ export default function CasesPage() {
       setCustomerDetails(null);
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const handleUpdatePriority = async (caseId: string, priority: 'HIGH' | 'MEDIUM' | 'LOW') => {
+    try {
+      setQuickEditLoading(true);
+      await crmService.updatePriority(caseId, priority);
+      setCases(prev => prev.map(c => c.id === caseId ? { ...c, priority } : c));
+      setPriorityModalCase(null);
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to update priority');
+    } finally {
+      setQuickEditLoading(false);
+    }
+  };
+
+  const handleUpdateReminder = async (caseId: string, reminderDate: string | null) => {
+    try {
+      setQuickEditLoading(true);
+      await crmService.updateReminder(caseId, reminderDate);
+      setCases(prev => prev.map(c => c.id === caseId ? { ...c, reminder_date: reminderDate } : c));
+      setReminderModalCase(null);
+      setReminderDateInput('');
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Failed to update reminder');
+    } finally {
+      setQuickEditLoading(false);
     }
   };
 
@@ -522,6 +565,38 @@ export default function CasesPage() {
               />
             </div>
 
+            <div className="w-full sm:w-44">
+              <Select
+                label=""
+                value={priorityFilter}
+                onChange={(e: any) => {
+                  setPriorityFilter(e.target.value);
+                  setPage(0);
+                }}
+                className="w-full"
+                options={[
+                  { value: '', label: 'All Priorities' },
+                  ...CASE_PRIORITIES.map(p => ({ value: p.value, label: p.label }))
+                ]}
+              />
+            </div>
+
+            <div className="w-full sm:w-48">
+              <Select
+                label=""
+                value={loanTypeFilter}
+                onChange={(e: any) => {
+                  setLoanTypeFilter(e.target.value);
+                  setPage(0);
+                }}
+                className="w-full"
+                options={[
+                  { value: '', label: 'All Loan Types' },
+                  ...LOAN_TYPES.map(type => ({ value: type.value, label: type.label }))
+                ]}
+              />
+            </div>
+
             {/* User Filter - Only show in team view */}
             {viewType === 'team' && (
               <div className="w-full sm:w-56">
@@ -546,7 +621,7 @@ export default function CasesPage() {
             )}
 
             {/* Active Filters Display */}
-            {(statusFilter || userFilter || monthFilter) && (
+            {(statusFilter || priorityFilter || userFilter || loanTypeFilter || monthFilter) && (
               <div className="flex flex-wrap items-center gap-2 ml-auto">
                 {monthFilter && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
@@ -578,6 +653,34 @@ export default function CasesPage() {
                     </button>
                   </span>
                 )}
+                {priorityFilter && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm">
+                    Priority: {CASE_PRIORITIES.find(p => p.value === priorityFilter)?.label || priorityFilter}
+                    <button
+                      onClick={() => {
+                        setPriorityFilter('');
+                        setPage(0);
+                      }}
+                      className="hover:text-primary-900"
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {loanTypeFilter && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm">
+                    Loan: {LOAN_TYPES.find(t => t.value === loanTypeFilter)?.label || loanTypeFilter}
+                    <button
+                      onClick={() => {
+                        setLoanTypeFilter('');
+                        setPage(0);
+                      }}
+                      className="hover:text-primary-900"
+                    >
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
                 {userFilter && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm">
                     User: {subordinates.find(u => u.id === userFilter) ? `${subordinates.find(u => u.id === userFilter)!.first_name} ${subordinates.find(u => u.id === userFilter)!.last_name}` : 'Unknown'}
@@ -596,6 +699,7 @@ export default function CasesPage() {
                   onClick={() => {
                     setStatusFilter('');
                     setUserFilter('');
+                    setLoanTypeFilter('');
                     setMonthFilter('');
                     setPage(0);
                   }}
@@ -619,7 +723,7 @@ export default function CasesPage() {
             <Briefcase className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No cases found</h3>
             <p className="text-gray-600">
-              {searchTerm || statusFilter
+              {searchTerm || statusFilter || loanTypeFilter || monthFilter || userFilter
                 ? 'Try adjusting your filters'
                 : 'Create your first case to get started'}
             </p>
@@ -649,6 +753,9 @@ export default function CasesPage() {
                     </th>
                     <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                       Status
+                    </th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Priority
                     </th>
                     <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                       Assigned To
@@ -688,6 +795,12 @@ export default function CasesPage() {
                         <div className="text-xs text-gray-500 mt-0.5">
                           {LOAN_TYPES.find(t => t.value === caseItem.loan_type)?.label || caseItem.loan_type}
                           {caseItem.source_type && ` • ${caseItem.source_type}`}
+                          {caseItem.reminder_date && (
+                            <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
+                              <Calendar className="w-3 h-3" />
+                              {format(new Date(caseItem.reminder_date), 'MMM dd, yyyy')}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -703,6 +816,11 @@ export default function CasesPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${getStatusColor(caseItem.current_status)}`}>
                           {getStatusLabel(caseItem.current_status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full border ${getPriorityColor(caseItem.priority)}`}>
+                          {CASE_PRIORITIES.find(p => p.value === caseItem.priority)?.label || caseItem.priority}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -737,6 +855,19 @@ export default function CasesPage() {
                                 label: 'View Details',
                                 onClick: () => router.push(`/crm/cases/${caseItem.id}`),
                                 icon: <Eye className="w-4 h-4" />,
+                              },
+                              {
+                                label: 'Set Priority',
+                                onClick: () => setPriorityModalCase(caseItem),
+                                icon: <span className={`w-2 h-2 rounded-full ${caseItem.priority === 'HIGH' ? 'bg-red-500' : caseItem.priority === 'MEDIUM' ? 'bg-yellow-500' : 'bg-green-500'}`} />,
+                              },
+                              {
+                                label: caseItem.reminder_date ? 'Edit Reminder' : 'Set Reminder',
+                                onClick: () => {
+                                  setReminderModalCase(caseItem);
+                                  setReminderDateInput(caseItem.reminder_date ? new Date(caseItem.reminder_date).toISOString().slice(0, 16) : '');
+                                },
+                                icon: <Calendar className="w-4 h-4" />,
                               },
                             ]}
                           />
@@ -891,6 +1022,24 @@ export default function CasesPage() {
               { value: 'DST', label: 'DST' },
             ]}
           />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              label="Priority"
+              value={newCase.priority || 'MEDIUM'}
+              onChange={(e: any) => setNewCase({ ...newCase, priority: e.target.value })}
+              options={CASE_PRIORITIES.map(p => ({ value: p.value, label: p.label }))}
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Reminder Date (Optional)</label>
+              <input
+                type="datetime-local"
+                value={newCase.reminder_date ? new Date(newCase.reminder_date).toISOString().slice(0, 16) : ''}
+                onChange={(e: any) => setNewCase({ ...newCase, reminder_date: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+          </div>
 
           {/* Document Upload */}
           <div>
@@ -1119,6 +1268,94 @@ export default function CasesPage() {
                 Start Export
               </Button>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Priority Quick-Edit Modal */}
+      <Modal
+        isOpen={!!priorityModalCase}
+        onClose={() => setPriorityModalCase(null)}
+        title={priorityModalCase ? `Set Priority - ${priorityModalCase.case_number}` : 'Set Priority'}
+      >
+        <div className="space-y-3">
+          {CASE_PRIORITIES.map(p => (
+            <button
+              key={p.value}
+              onClick={() => priorityModalCase && handleUpdatePriority(priorityModalCase.id, p.value as 'HIGH' | 'MEDIUM' | 'LOW')}
+              disabled={quickEditLoading || priorityModalCase?.priority === p.value}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border transition-colors ${
+                priorityModalCase?.priority === p.value
+                  ? p.color
+                  : 'bg-white border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <span className="text-sm font-medium">{p.label}</span>
+              {priorityModalCase?.priority === p.value && <span className="text-xs font-semibold">Current</span>}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-3 pt-4">
+          <Button
+            variant="secondary"
+            onClick={() => setPriorityModalCase(null)}
+            className="flex-1"
+            disabled={quickEditLoading}
+          >
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Reminder Quick-Edit Modal */}
+      <Modal
+        isOpen={!!reminderModalCase}
+        onClose={() => {
+          setReminderModalCase(null);
+          setReminderDateInput('');
+        }}
+        title={reminderModalCase ? `Set Reminder - ${reminderModalCase.case_number}` : 'Set Reminder'}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reminder Date & Time</label>
+            <input
+              type="datetime-local"
+              value={reminderDateInput}
+              onChange={(e: any) => setReminderDateInput(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">Leave blank to remove the reminder.</p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setReminderModalCase(null);
+                setReminderDateInput('');
+              }}
+              className="flex-1"
+              disabled={quickEditLoading}
+            >
+              Cancel
+            </Button>
+            {reminderModalCase?.reminder_date && (
+              <Button
+                variant="secondary"
+                onClick={() => reminderModalCase && handleUpdateReminder(reminderModalCase.id, null)}
+                className="flex-1"
+                disabled={quickEditLoading}
+              >
+                Remove
+              </Button>
+            )}
+            <Button
+              onClick={() => reminderModalCase && handleUpdateReminder(reminderModalCase.id, reminderDateInput ? new Date(reminderDateInput).toISOString() : null)}
+              className="flex-1"
+              disabled={quickEditLoading}
+            >
+              {quickEditLoading ? 'Saving...' : 'Save Reminder'}
+            </Button>
           </div>
         </div>
       </Modal>

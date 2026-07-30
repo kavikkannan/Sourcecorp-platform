@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { ChevronRight, Home, Bell } from 'lucide-react';
+import { ChevronRight, Home } from 'lucide-react';
 import Link from 'next/link';
-import { crmService } from '@/lib/crm';
+import NotificationDropdown from '@/components/NotificationDropdown';
 
 interface Breadcrumb {
   label: string;
@@ -17,23 +16,6 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      try {
-        const result = await crmService.getUnreadNotificationCount();
-        setUnreadCount(result.count);
-      } catch (error) {
-        console.error('Failed to load unread count:', error);
-      }
-    };
-
-    loadUnreadCount();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Generate breadcrumbs from pathname
   const generateBreadcrumbs = (): Breadcrumb[] => {
@@ -96,19 +78,7 @@ export default function Header() {
           {/* User Info */}
           <div className="flex items-center space-x-4">
             {/* Notifications */}
-            {pathname.startsWith('/crm') && (
-              <Link
-                href="/crm/notifications"
-                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-0 right-0 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </Link>
-            )}
+            {pathname.startsWith('/crm') && <NotificationDropdown />}
             
             <div className="text-right">
               <p className="text-sm font-medium text-gray-900">

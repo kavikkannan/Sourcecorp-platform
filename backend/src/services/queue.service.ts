@@ -20,11 +20,29 @@ export const exportQueue = new Queue('case_export_queue', {
     }
 });
 
+export const notificationDigestQueue = new Queue('notification_digest_queue', {
+    connection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 5000,
+        },
+        removeOnComplete: 10,
+        removeOnFail: 5,
+    }
+});
+
 export interface ExportJobData {
     userId: string;
     userRole: string;
     userTeams: string[];
     caseIds: string[];
+}
+
+export interface DigestJobData {
+    userId: string;
+    frequency: 'DAILY' | 'WEEKLY';
 }
 
 export class QueueService {

@@ -33,6 +33,7 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Modal from '@/components/Modal';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import {
   crmService,
   Case,
@@ -43,8 +44,10 @@ import {
   CaseNotification,
   LOAN_TYPES,
   CASE_STATUSES,
+  CASE_PRIORITIES,
   getStatusColor,
   getStatusLabel,
+  getPriorityColor,
 } from '@/lib/crm';
 import { api } from '@/lib/api';
 import { hierarchyService } from '@/lib/hierarchy';
@@ -55,6 +58,7 @@ export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { hasPermission, user } = useAuth();
+  const { refresh: refreshNotifications } = useNotifications();
   const caseId = params.id as string;
 
   const [caseData, setCaseData] = useState<Case | null>(null);
@@ -92,6 +96,10 @@ export default function CaseDetailPage() {
   const [isEditingCaseOverview, setIsEditingCaseOverview] = useState(false);
   const [editedCaseData, setEditedCaseData] = useState<Partial<Case>>({});
   const [showCaseRequestChangeModal, setShowCaseRequestChangeModal] = useState(false);
+
+  // Priority & reminder edit states
+  const [isEditingPriorityReminder, setIsEditingPriorityReminder] = useState(false);
+  const [priorityReminderLoading, setPriorityReminderLoading] = useState(false);
 
   // Form states
   const [assignUserId, setAssignUserId] = useState('');
@@ -344,7 +352,8 @@ export default function CaseDetailPage() {
       setScheduleMessage('');
       setScheduleDateTime('');
       setScheduleFile(null);
-      loadCaseData();
+      await loadCaseData();
+      await refreshNotifications();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to schedule notification');
     } finally {
@@ -559,7 +568,8 @@ export default function CaseDetailPage() {
       alert('Customer details updated successfully');
       setIsEditingCustomerDetails(false);
       setEditedCustomerDetails({});
-      loadCaseData();
+      await loadCaseData();
+      await refreshNotifications();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to save changes');
     } finally {
@@ -653,7 +663,8 @@ export default function CaseDetailPage() {
       setSubmitting(true);
       await crmService.approveCustomerDetailChangeRequest(requestId, remarks);
       alert('Change request approved successfully');
-      loadCaseData();
+      await loadCaseData();
+      await refreshNotifications();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to approve change request');
     } finally {
@@ -670,7 +681,8 @@ export default function CaseDetailPage() {
       setSubmitting(true);
       await crmService.rejectCustomerDetailChangeRequest(requestId, remarks);
       alert('Change request rejected');
-      loadCaseData();
+      await loadCaseData();
+      await refreshNotifications();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to reject change request');
     } finally {
@@ -746,7 +758,8 @@ export default function CaseDetailPage() {
       alert('Case details updated successfully');
       setIsEditingCaseOverview(false);
       setEditedCaseData({});
-      loadCaseData();
+      await loadCaseData();
+      await refreshNotifications();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to save changes');
     } finally {
@@ -905,6 +918,15 @@ export default function CaseDetailPage() {
                 <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(caseData.current_status)}`}>
                   {getStatusLabel(caseData.current_status)}
                 </span>
+                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full border ${getPriorityColor(caseData.priority)}`}>
+                  {CASE_PRIORITIES.find(p => p.value === caseData.priority)?.label || caseData.priority}
+                </span>
+                {caseData.reminder_date && (
+                  <span className="text-sm text-amber-600 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" />
+                    {new Date(caseData.reminder_date).toLocaleString()}
+                  </span>
+                )}
                 {caseData.current_assignee && (
                   <span className="text-sm text-gray-600">
                     Assigned to <span className="font-medium">{caseData.current_assignee.name}</span>
@@ -1092,6 +1114,92 @@ export default function CaseDetailPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Priority & Reminder Section */}
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Priority & Reminder</h2>
+            {hasPermission('crm.case.update_status') && (
+              <Button
+                variant="secondary"
+                onClick={() => setIsEditingPriorityReminder(true)}
+                className="text-xs px-2 py-1 h-7"
+              >
+                Edit
+              </Button>
+            )}
+          </div>
+          {isEditingPriorityReminder ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <Select
+                  value={caseData.priority}
+                  onChange={(e) => setCaseData({ ...caseData, priority: e.target.value as 'HIGH' | 'MEDIUM' | 'LOW' })}
+                  options={CASE_PRIORITIES.map(p => ({ value: p.value, label: p.label }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reminder Date & Time</label>
+                <input
+                  type="datetime-local"
+                  value={caseData.reminder_date ? new Date(caseData.reminder_date).toISOString().slice(0, 16) : ''}
+                  onChange={(e: any) => setCaseData({ ...caseData, reminder_date: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">Leave blank to remove the reminder.</p>
+              </div>
+              <div className="md:col-span-2 flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsEditingPriorityReminder(false)}
+                  disabled={priorityReminderLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    try {
+                      setPriorityReminderLoading(true);
+                      await crmService.updatePriority(caseData.id, caseData.priority);
+                      if (caseData.reminder_date !== caseData.reminder_date) {
+                        // handled separately below
+                      }
+                      await crmService.updateReminder(caseData.id, caseData.reminder_date || null);
+                      setIsEditingPriorityReminder(false);
+                    } catch (error: any) {
+                      alert(error.response?.data?.error || 'Failed to save changes');
+                    } finally {
+                      setPriorityReminderLoading(false);
+                    }
+                  }}
+                  disabled={priorityReminderLoading}
+                >
+                  {priorityReminderLoading ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex items-start gap-3">
+                <span className={`inline-flex px-3 py-1.5 text-sm font-semibold rounded-full border ${getPriorityColor(caseData.priority)}`}>
+                  {CASE_PRIORITIES.find(p => p.value === caseData.priority)?.label || caseData.priority}
+                </span>
+              </div>
+              <div className="flex items-start gap-3">
+                <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-xs text-gray-500">Reminder</p>
+                  {caseData.reminder_date ? (
+                    <p className="text-sm font-medium text-gray-900">{new Date(caseData.reminder_date).toLocaleString()}</p>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No reminder set</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Status Section */}

@@ -26,6 +26,7 @@ import {
   Plus,
   ListTodo,
   Award,
+  BarChart3,
 } from 'lucide-react';
 
 interface NavItem {
@@ -89,6 +90,23 @@ const navSections: NavSection[] = [
         href: '/financial-tools/cam',
         icon: Receipt,
         permission: 'finance.cam.view',
+      },
+    ],
+  },
+  {
+    title: 'Daily Reports',
+    items: [
+      {
+        name: 'Submit Report',
+        href: '/daily-reports/submit',
+        icon: FileText,
+        permission: 'daily_report.create',
+      },
+      {
+        name: 'Reports & Stats',
+        href: '/daily-reports',
+        icon: BarChart3,
+        permission: 'daily_report.view',
       },
     ],
   },
@@ -180,6 +198,17 @@ const navSections: NavSection[] = [
       },
     ],
   },
+  {
+    title: 'Settings',
+    items: [
+      {
+        name: 'Notification Preferences',
+        href: '/settings/notifications',
+        icon: Bell,
+        permission: '', // Available to all authenticated users
+      },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -191,7 +220,8 @@ export default function Sidebar() {
     if (href === '/dashboard') {
       return pathname === '/dashboard';
     }
-    return pathname.startsWith(href);
+    // Exact match or sub-route match (prevents sibling routes like /daily-reports and /daily-reports/submit both highlighting)
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   return (

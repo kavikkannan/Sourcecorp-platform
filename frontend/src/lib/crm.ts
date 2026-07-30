@@ -11,6 +11,8 @@ export interface Case {
   loan_amount: number;
   source_type?: 'DSA' | 'DST' | null;
   current_status: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  reminder_date?: string | null;
   created_at: string;
   updated_at: string;
   creator?: {
@@ -131,6 +133,8 @@ export interface CreateCaseData {
   loan_type: string;
   loan_amount: number;
   source_type?: 'DSA' | 'DST' | null;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  reminder_date?: string | null;
   documents?: File[];
 }
 
@@ -147,6 +151,14 @@ export const crmService = {
 
     if (data.source_type) {
       formData.append('source_type', data.source_type);
+    }
+
+    if (data.priority) {
+      formData.append('priority', data.priority);
+    }
+
+    if (data.reminder_date) {
+      formData.append('reminder_date', data.reminder_date);
     }
 
     if (data.documents && data.documents.length > 0) {
@@ -167,11 +179,28 @@ export const crmService = {
     status?: string;
     view_type?: 'individual' | 'team';
     created_by?: string;
+    loan_type?: string;
+    priority?: string;
     limit?: number;
     offset?: number;
     month?: string; // Format: 'YYYY-MM'
   }): Promise<{ cases: Case[]; total: number; limit: number; offset: number }> {
     const response = await api.get('/crm/cases', { params });
+    return response.data;
+  },
+
+  async updatePriority(caseId: string, priority: 'HIGH' | 'MEDIUM' | 'LOW'): Promise<{ id: string; priority: string }> {
+    const response = await api.patch(`/crm/cases/${caseId}/priority`, { priority });
+    return response.data;
+  },
+
+  async updateReminder(caseId: string, reminderDate: string | null): Promise<{ id: string; reminder_date: string | null }> {
+    const response = await api.patch(`/crm/cases/${caseId}/reminder`, { reminder_date: reminderDate });
+    return response.data;
+  },
+
+  async getUpcomingReminders(): Promise<{ reminders: Case[] }> {
+    const response = await api.get('/crm/cases/upcoming-reminders');
     return response.data;
   },
 
@@ -425,6 +454,16 @@ export const LOAN_TYPES = [
   { value: 'BUSINESS', label: 'Business Loan' },
   { value: 'EDUCATION', label: 'Education Loan' },
 ];
+
+export const CASE_PRIORITIES = [
+  { value: 'HIGH', label: 'High', color: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'MEDIUM', label: 'Medium', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  { value: 'LOW', label: 'Low', color: 'bg-green-100 text-green-700 border-green-200' },
+];
+
+export const getPriorityColor = (priority: string): string => {
+  return CASE_PRIORITIES.find(p => p.value === priority)?.color || 'bg-gray-100 text-gray-700 border-gray-200';
+};
 
 export const CASE_STATUSES = [
   { value: 'NEW', label: 'New Case', color: 'bg-blue-100 text-blue-800' },

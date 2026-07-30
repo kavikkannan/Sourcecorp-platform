@@ -17,6 +17,11 @@
 | `JWT_SECRET` | Yes | - | Secret for signing access tokens |
 | `JWT_REFRESH_SECRET` | Yes | - | Secret for signing refresh tokens |
 | `CORS_ORIGIN` | Yes | `http://localhost:3000` | Allowed CORS origin(s), comma-separated |
+| `SMTP_HOST` | No | - | SMTP server hostname for email notifications |
+| `SMTP_PORT` | No | `587` | SMTP server port |
+| `SMTP_USER` | No | - | SMTP username |
+| `SMTP_PASS` | No | - | SMTP password |
+| `SMTP_FROM` | No | `noreply@sourcecorp.com` | Default sender email address |
 
 ## Frontend Variables
 
@@ -56,6 +61,11 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - CORS_ORIGIN=https://platform.sourcecorp.com
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
   
   frontend:
     environment:
@@ -102,6 +112,11 @@ REDIS_PORT=6379
 JWT_SECRET=dev_jwt_secret_change_in_production
 JWT_REFRESH_SECRET=dev_refresh_secret_change_in_production
 CORS_ORIGIN=http://localhost:3000
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=noreply@sourcecorp.com
 ```
 
 ```bash
@@ -126,6 +141,11 @@ REDIS_PASSWORD=<redis_password>
 JWT_SECRET=<32_char_random>
 JWT_REFRESH_SECRET=<32_char_random_different>
 CORS_ORIGIN=https://platform.sourcecorp.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=no-reply@example.com
+SMTP_PASS=<smtp_password>
+SMTP_FROM=noreply@sourcecorp.com
 ```
 
 ## Validation

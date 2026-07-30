@@ -1,8 +1,9 @@
 import { query } from '../db/pool';
 import { logger } from '../config/logger';
-import { Case, CaseWithDetails, CaseAssignment, CaseStatusHistory, Document, CaseNote, TimelineEvent, User } from '../types';
+import { Case, CaseWithDetails, CaseAssignment, CaseStatusHistory, Document, CaseNote, TimelineEvent, User, NotificationType } from '../types';
 import { AuditService } from './audit.service';
 import { HierarchyService } from './hierarchy.service';
+import { NotificationService } from './notification.service';
 import fs from 'fs/promises';
 
 export class CRMService {
@@ -18,12 +19,14 @@ export class CRMService {
     loan_type: string;
     loan_amount: number;
     source_type?: 'DSA' | 'DST' | null;
+    priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+    reminder_date?: Date | null;
     created_by: string;
   }, auditData: { ipAddress?: string; userAgent?: string }): Promise<Case> {
     const result = await query(
       `INSERT INTO crm_schema.cases 
-       (customer_name, customer_email, customer_phone, loan_type, loan_amount, source_type, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (customer_name, customer_email, customer_phone, loan_type, loan_amount, source_type, priority, reminder_date, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         data.customer_name,
@@ -32,6 +35,8 @@ export class CRMService {
         data.loan_type,
         data.loan_amount,
         data.source_type || null,
+        data.priority || 'MEDIUM',
+        data.reminder_date || null,
         data.created_by,
       ]
     );
@@ -86,11 +91,13 @@ export class CRMService {
     status?: string;
     view_type?: 'individual' | 'team';
     created_by?: string;
+    loan_type?: string;
+    priority?: string;
     limit?: number;
     offset?: number;
     month?: string; // Format: 'YYYY-MM'
   }): Promise<{ cases: CaseWithDetails[], total: number }> {
-    const { userId, userRole, userTeams, status, view_type, created_by, limit = 20, offset = 0, month } = filters;
+    const { userId, userRole, userTeams, status, view_type, created_by, loan_type, priority, limit = 20, offset = 0, month } = filters;
 
     let whereClause = 'WHERE 1=1';
     const params: any[] = [];
@@ -196,6 +203,20 @@ export class CRMService {
       paramIndex++;
     }
 
+    // Loan type filter
+    if (loan_type) {
+      whereClause += ` AND c.loan_type = $${paramIndex}`;
+      params.push(loan_type);
+      paramIndex++;
+    }
+
+    // Priority filter
+    if (priority) {
+      whereClause += ` AND c.priority = $${paramIndex}`;
+      params.push(priority);
+      paramIndex++;
+    }
+
     // Created by filter (for team view - filter by subordinate)
     // For team view, also include cases currently assigned to the selected user
     if (created_by) {
@@ -275,6 +296,8 @@ export class CRMService {
       loan_amount: parseFloat(row.loan_amount),
       source_type: row.source_type,
       current_status: row.current_status,
+      priority: row.priority || 'MEDIUM',
+      reminder_date: row.reminder_date,
       created_by: row.created_by,
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -405,6 +428,8 @@ export class CRMService {
       loan_amount: parseFloat(caseData.loan_amount),
       source_type: caseData.source_type,
       current_status: caseData.current_status,
+      priority: caseData.priority || 'MEDIUM',
+      reminder_date: caseData.reminder_date,
       created_by: caseData.created_by,
       created_at: caseData.created_at,
       updated_at: caseData.updated_at,
@@ -417,6 +442,156 @@ export class CRMService {
       assignments,
       current_assignment: assignments.length > 0 ? assignments[0] : undefined,
     };
+  }
+
+  static async updateCasePriority(
+    caseId: string,
+    priority: 'HIGH' | 'MEDIUM' | 'LOW',
+    userId: string,
+    auditData: { ipAddress?: string; userAgent?: string }
+  ): Promise<Case> {
+    const result = await query(
+      `UPDATE crm_schema.cases
+       SET priority = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [priority, caseId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Case not found');
+    }
+
+    await AuditService.createLog({
+      userId,
+      action: 'case.update_priority',
+      resourceType: 'case',
+      resourceId: caseId,
+      details: { priority },
+      ipAddress: auditData.ipAddress,
+      userAgent: auditData.userAgent,
+    });
+
+    return result.rows[0];
+  }
+
+  static async updateCaseReminder(
+    caseId: string,
+    reminderDate: Date | null,
+    userId: string,
+    auditData: { ipAddress?: string; userAgent?: string }
+  ): Promise<Case> {
+    const result = await query(
+      `UPDATE crm_schema.cases
+       SET reminder_date = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [reminderDate, caseId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Case not found');
+    }
+
+    await AuditService.createLog({
+      userId,
+      action: 'case.update_reminder',
+      resourceType: 'case',
+      resourceId: caseId,
+      details: { reminder_date: reminderDate },
+      ipAddress: auditData.ipAddress,
+      userAgent: auditData.userAgent,
+    });
+
+    return result.rows[0];
+  }
+
+  static async getUpcomingCaseReminders(
+    userId: string,
+    userRole: string,
+    days: number = 7
+  ): Promise<CaseWithDetails[]> {
+    const fromDate = new Date();
+    const toDate = new Date();
+    toDate.setDate(toDate.getDate() + days);
+
+    let whereClause = 'WHERE c.reminder_date IS NOT NULL AND c.reminder_date >= $1 AND c.reminder_date <= $2';
+    const params: any[] = [fromDate, toDate];
+
+    if (userRole !== 'admin' && userRole !== 'super_admin') {
+      whereClause += ` AND (
+        c.created_by = $3
+        OR EXISTS (
+          SELECT 1 FROM (
+            SELECT DISTINCT ON (case_id) *
+            FROM crm_schema.case_assignments
+            WHERE case_id = c.id
+            ORDER BY case_id, assigned_at DESC
+          ) current_assignment
+          WHERE current_assignment.assigned_to = $3
+        )
+      )`;
+      params.push(userId);
+    }
+
+    const result = await query(
+      `SELECT
+        c.*,
+        creator.id as creator_id,
+        creator.email as creator_email,
+        creator.first_name as creator_first_name,
+        creator.last_name as creator_last_name,
+        assignee.id as assignee_id,
+        assignee.email as assignee_email,
+        assignee.first_name as assignee_first_name,
+        assignee.last_name as assignee_last_name
+       FROM crm_schema.cases c
+       LEFT JOIN auth_schema.users creator ON c.created_by = creator.id
+       LEFT JOIN LATERAL (
+         SELECT * FROM crm_schema.case_assignments
+         WHERE case_id = c.id
+         ORDER BY assigned_at DESC
+         LIMIT 1
+       ) ca ON true
+       LEFT JOIN auth_schema.users assignee ON ca.assigned_to = assignee.id
+       ${whereClause}
+       ORDER BY c.reminder_date ASC
+       LIMIT 50`,
+      params
+    );
+
+    return result.rows.map(row => ({
+      id: row.id,
+      case_number: row.case_number,
+      customer_name: row.customer_name,
+      customer_email: row.customer_email,
+      customer_phone: row.customer_phone,
+      loan_type: row.loan_type,
+      loan_amount: parseFloat(row.loan_amount),
+      source_type: row.source_type,
+      current_status: row.current_status,
+      priority: row.priority || 'MEDIUM',
+      reminder_date: row.reminder_date,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      creator: row.creator_id ? {
+        id: row.creator_id,
+        email: row.creator_email,
+        first_name: row.creator_first_name,
+        last_name: row.creator_last_name,
+      } : undefined,
+      current_assignment: row.assignee_id ? {
+        id: row.assignee_id,
+        assigned_to: row.assignee_id,
+        assignee: {
+          id: row.assignee_id,
+          email: row.assignee_email,
+          first_name: row.assignee_first_name,
+          last_name: row.assignee_last_name,
+        }
+      } : undefined,
+    }));
   }
 
   // ============================================
@@ -437,6 +612,34 @@ export class CRMService {
     );
 
     // Don't automatically change status on assignment - keep current status
+
+    // Notify the assigned user
+    try {
+      const caseResult = await query(
+        `SELECT case_number, customer_name FROM crm_schema.cases WHERE id = $1`,
+        [data.case_id]
+      );
+      const caseInfo = caseResult.rows[0];
+
+      const assignerResult = await query(
+        `SELECT first_name, last_name FROM auth_schema.users WHERE id = $1`,
+        [data.assigned_by]
+      );
+      const assigner = assignerResult.rows[0];
+
+      if (caseInfo && assigner && data.assigned_to !== data.assigned_by) {
+        await NotificationService.createNotification({
+          case_id: data.case_id,
+          scheduled_for: data.assigned_to,
+          scheduled_by: data.assigned_by,
+          message: `You have been assigned to case ${caseInfo.case_number} (${caseInfo.customer_name}) by ${assigner.first_name} ${assigner.last_name}`,
+          title: 'New Case Assignment',
+          type: NotificationType.CASE_ASSIGNMENT,
+        });
+      }
+    } catch (notifyError) {
+      logger.warn('Failed to create assignment notification', notifyError);
+    }
 
     // Audit log
     await AuditService.createLog({
@@ -490,6 +693,52 @@ export class CRMService {
        RETURNING *`,
       [data.case_id, oldStatus, data.new_status, data.changed_by, data.remarks || null]
     );
+
+    // Notify current assignee and creator about status change
+    try {
+      const caseResult = await query(
+        `SELECT case_number, customer_name, created_by FROM crm_schema.cases WHERE id = $1`,
+        [data.case_id]
+      );
+      const caseInfo = caseResult.rows[0];
+
+      const assigneeResult = await query(
+        `SELECT DISTINCT ON (case_id) assigned_to
+         FROM crm_schema.case_assignments
+         WHERE case_id = $1
+         ORDER BY case_id, assigned_at DESC`,
+        [data.case_id]
+      );
+      const currentAssigneeId = assigneeResult.rows[0]?.assigned_to;
+
+      const changerResult = await query(
+        `SELECT first_name, last_name FROM auth_schema.users WHERE id = $1`,
+        [data.changed_by]
+      );
+      const changer = changerResult.rows[0];
+
+      if (caseInfo && changer) {
+        const message = `Case ${caseInfo.case_number} (${caseInfo.customer_name}) status changed from ${oldStatus} to ${data.new_status} by ${changer.first_name} ${changer.last_name}`;
+
+        const notifyUserIds = new Set<string>();
+        if (currentAssigneeId && currentAssigneeId !== data.changed_by) notifyUserIds.add(currentAssigneeId);
+        if (caseInfo.created_by && caseInfo.created_by !== data.changed_by) notifyUserIds.add(caseInfo.created_by);
+
+        for (const userId of notifyUserIds) {
+          await NotificationService.createNotification({
+            case_id: data.case_id,
+            scheduled_for: userId,
+            scheduled_by: data.changed_by,
+            message,
+            title: 'Case Status Updated',
+            type: NotificationType.STATUS_CHANGE,
+            metadata: { from_status: oldStatus, to_status: data.new_status },
+          });
+        }
+      }
+    } catch (notifyError) {
+      logger.warn('Failed to create status change notification', notifyError);
+    }
 
     // Audit log
     await AuditService.createLog({
@@ -911,22 +1160,15 @@ export class CRMService {
       throw new Error('Cannot schedule notification: User is not in your hierarchy or is in a different team');
     }
 
-    const result = await query(
-      `INSERT INTO crm_schema.case_notifications 
-       (case_id, scheduled_for, scheduled_by, message, scheduled_at, document_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        data.case_id,
-        data.scheduled_for,
-        data.scheduled_by,
-        data.message || null,
-        data.scheduled_at,
-        data.document_id || null,
-      ]
-    );
-
-    const notification = result.rows[0];
+    const notification = await NotificationService.createNotification({
+      case_id: data.case_id,
+      scheduled_for: data.scheduled_for,
+      scheduled_by: data.scheduled_by,
+      message: data.message,
+      scheduled_at: data.scheduled_at,
+      type: NotificationType.CASE_REMINDER,
+      document_id: data.document_id,
+    });
 
     // Audit log
     await AuditService.createLog({
@@ -1474,18 +1716,16 @@ export class CRMService {
     const changeSummary = changeCount > 3 ? `${changeFields} and ${changeCount - 3} more` : changeFields;
 
     // Create a notification for the approver
-    await query(
-      `INSERT INTO crm_schema.case_notifications 
-       (case_id, scheduled_for, scheduled_by, message, scheduled_at, status, change_request_id)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'PENDING', $5)`,
-      [
-        data.caseId,
-        data.requestedFor,
-        data.requestedBy,
-        `Change request from ${requester.first_name} ${requester.last_name} for case ${caseInfo.case_number}: ${changeSummary}`,
-        changeRequest.id
-      ]
-    );
+    await NotificationService.createNotification({
+      case_id: data.caseId,
+      scheduled_for: data.requestedFor,
+      scheduled_by: data.requestedBy,
+      message: `Change request from ${requester.first_name} ${requester.last_name} for case ${caseInfo.case_number}: ${changeSummary}`,
+      title: 'Change Request Pending Approval',
+      scheduled_at: new Date(),
+      type: NotificationType.CHANGE_REQUEST,
+      change_request_id: changeRequest.id,
+    });
 
     return changeRequest;
   }

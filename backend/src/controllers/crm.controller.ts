@@ -17,7 +17,7 @@ export class CRMController {
 
   static async createCase(req: AuthRequest, res: Response) {
     try {
-      const { customer_name, customer_email, customer_phone, loan_type, loan_amount, source_type } = req.body;
+      const { customer_name, customer_email, customer_phone, loan_type, loan_amount, source_type, priority, reminder_date } = req.body;
       const files = (req.files as Express.Multer.File[]) || [];
 
       // Handle source_type: convert empty string to null
@@ -31,6 +31,8 @@ export class CRMController {
           loan_type,
           loan_amount: parseFloat(loan_amount),
           source_type: normalizedSourceType,
+          priority,
+          reminder_date: reminder_date ? new Date(reminder_date) : null,
           created_by: req.user!.userId,
         },
         {
@@ -87,6 +89,8 @@ export class CRMController {
         loan_amount: parseFloat(newCase.loan_amount.toString()),
         source_type: newCase.source_type,
         current_status: newCase.current_status,
+        priority: newCase.priority,
+        reminder_date: newCase.reminder_date,
         created_at: newCase.created_at,
         updated_at: newCase.updated_at,
         documents: uploadedDocuments,
@@ -98,7 +102,7 @@ export class CRMController {
 
   static async getCases(req: AuthRequest, res: Response) {
     try {
-      const { status, view_type, created_by, limit = '20', offset = '0', month } = req.query;
+      const { status, view_type, created_by, loan_type, priority, limit = '20', offset = '0', month } = req.query;
 
       // Get user's role to apply RBAC
       const userResult = await query(
@@ -127,6 +131,8 @@ export class CRMController {
         status: status as string | undefined,
         view_type: view_type as 'individual' | 'team' | undefined,
         created_by: created_by as string | undefined,
+        loan_type: loan_type as string | undefined,
+        priority: priority as string | undefined,
         limit: parseInt(limit as string, 10),
         offset: parseInt(offset as string, 10),
         month: month as string | undefined,
@@ -143,6 +149,8 @@ export class CRMController {
           loan_amount: c.loan_amount,
           source_type: c.source_type,
           current_status: c.current_status,
+          priority: c.priority,
+          reminder_date: c.reminder_date,
           created_at: c.created_at,
           updated_at: c.updated_at,
           creator: c.creator ? {
@@ -197,6 +205,8 @@ export class CRMController {
         loan_amount: caseData.loan_amount,
         source_type: caseData.source_type,
         current_status: caseData.current_status,
+        priority: caseData.priority,
+        reminder_date: caseData.reminder_date,
         created_at: caseData.created_at,
         updated_at: caseData.updated_at,
         creator: caseData.creator ? {
@@ -217,6 +227,91 @@ export class CRMController {
             email: a.assigner.email,
             name: `${a.assigner.first_name} ${a.assigner.last_name}`,
           },
+        })),
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async updatePriority(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { priority } = req.body;
+
+      const updatedCase = await CRMService.updateCasePriority(
+        id,
+        priority,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.json({
+        id: updatedCase.id,
+        priority: updatedCase.priority,
+        updated_at: updatedCase.updated_at,
+      });
+    } catch (error: any) {
+      if (error.message === 'Case not found') {
+        return res.status(404).json({ error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  static async updateReminder(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { reminder_date } = req.body;
+
+      const updatedCase = await CRMService.updateCaseReminder(
+        id,
+        reminder_date ? new Date(reminder_date) : null,
+        req.user!.userId,
+        {
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        }
+      );
+
+      res.json({
+        id: updatedCase.id,
+        reminder_date: updatedCase.reminder_date,
+        updated_at: updatedCase.updated_at,
+      });
+    } catch (error: any) {
+      if (error.message === 'Case not found') {
+        return res.status(404).json({ error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  static async getUpcomingReminders(req: AuthRequest, res: Response) {
+    try {
+      const userResult = await query(
+        `SELECT r.name as role_name
+         FROM auth_schema.users u
+         LEFT JOIN auth_schema.user_roles ur ON u.id = ur.user_id
+         LEFT JOIN auth_schema.roles r ON ur.role_id = r.id
+         WHERE u.id = $1`,
+        [req.user!.userId]
+      );
+      const userRole = userResult.rows[0]?.role_name || 'employee';
+
+      const reminders = await CRMService.getUpcomingCaseReminders(req.user!.userId, userRole, 7);
+
+      res.json({
+        reminders: reminders.map(c => ({
+          id: c.id,
+          case_number: c.case_number,
+          customer_name: c.customer_name,
+          priority: c.priority,
+          reminder_date: c.reminder_date,
+          current_status: c.current_status,
         })),
       });
     } catch (error) {

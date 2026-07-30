@@ -12,6 +12,8 @@ import templateRoutes from './routes/template.routes';
 import usersRoutes from './routes/users.routes';
 import tasksRoutes from './routes/tasks.routes';
 import notesRoutes from './routes/notes.routes';
+import notificationRoutes from './routes/notification.routes';
+import dailyReportRoutes from './routes/dailyReport.routes';
 
 import { AnnouncementsController } from './controllers/announcements.controller';
 import { RecognitionsController } from './controllers/recognitions.controller';
@@ -68,6 +70,8 @@ app.use('/api/finance/templates', templateRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/notes', notesRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/daily-reports', dailyReportRoutes);
 
 
 // 404 handler

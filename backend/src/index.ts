@@ -5,6 +5,7 @@ import { pool } from './db/pool';
 import { connectRedis, redisClient } from './db/redis';
 
 import './workers/export.worker';
+import './workers/notification-digest.worker';
 
 const startServer = async () => {
   try {

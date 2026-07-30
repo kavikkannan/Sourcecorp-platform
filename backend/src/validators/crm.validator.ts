@@ -20,6 +20,8 @@ export const createCaseSchema = z.object({
       }),
     ]),
     source_type: z.enum(['DSA', 'DST']).optional().nullable(),
+    priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+    reminder_date: z.string().datetime().optional().nullable(),
   }),
 });
 
@@ -33,6 +35,8 @@ export const getCasesSchema = z.object({
   query: z.object({
     status: z.string().optional(),
     view_type: z.enum(['individual', 'team']).optional(),
+    loan_type: z.enum(['PERSONAL', 'HOME', 'AUTO', 'BUSINESS', 'EDUCATION']).optional(),
+    priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
     limit: z.string().regex(/^\d+$/).optional(),
     offset: z.string().regex(/^\d+$/).optional(),
   }),
@@ -70,6 +74,24 @@ export const updateStatusSchema = z.object({
       errorMap: () => ({ message: 'Invalid status' }),
     }),
     remarks: z.string().optional(),
+  }),
+});
+
+export const updateCasePrioritySchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid case ID'),
+  }),
+  body: z.object({
+    priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+  }),
+});
+
+export const updateCaseReminderSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid case ID'),
+  }),
+  body: z.object({
+    reminder_date: z.string().datetime().nullable(),
   }),
 });
 

@@ -82,10 +82,20 @@ export interface Case {
   loan_amount: number;
   source_type: 'DSA' | 'DST' | null;
   current_status: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  reminder_date: Date | null;
   created_by: string;
   created_at: Date;
   updated_at: Date;
 }
+
+export const CasePriority = {
+  HIGH: 'HIGH',
+  MEDIUM: 'MEDIUM',
+  LOW: 'LOW',
+} as const;
+
+export type CasePriorityType = typeof CasePriority[keyof typeof CasePriority];
 
 export interface CaseAssignment {
   id: string;
@@ -163,6 +173,59 @@ export const LoanType = {
 } as const;
 
 export type LoanTypeType = typeof LoanType[keyof typeof LoanType];
+
+// ============================================
+// NOTIFICATION TYPES
+// ============================================
+
+export enum NotificationType {
+  CASE_REMINDER = 'CASE_REMINDER',
+  CHANGE_REQUEST = 'CHANGE_REQUEST',
+  CASE_ASSIGNMENT = 'CASE_ASSIGNMENT',
+  STATUS_CHANGE = 'STATUS_CHANGE',
+  SYSTEM = 'SYSTEM',
+}
+
+export interface Notification {
+  id: string;
+  case_id: string;
+  scheduled_for: string;
+  scheduled_by: string;
+  message: string | null;
+  scheduled_at: Date;
+  status: 'PENDING' | 'SENT' | 'CANCELLED';
+  is_read: boolean;
+  completion_status: 'ONGOING' | 'COMPLETED';
+  type: NotificationType;
+  title: string | null;
+  action_url: string | null;
+  metadata: any;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface NotificationWithDetails extends Notification {
+  case_number?: string;
+  case_customer_name?: string;
+  case_status?: string;
+  scheduled_by_user?: User;
+  document?: Document;
+  change_request_id?: string;
+  change_request_status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  change_request_changes?: Record<string, any>;
+}
+
+export interface NotificationPreference {
+  id: string;
+  user_id: string;
+  notification_type: NotificationType;
+  in_app: boolean;
+  email: boolean;
+  push: boolean;
+  digest_mode: 'IMMEDIATE' | 'DAILY' | 'WEEKLY';
+  created_at: Date;
+  updated_at: Date;
+}
 
 // ============================================
 // FINANCE TYPES (PHASE 3)
@@ -357,6 +420,44 @@ export interface Note {
   created_at: Date;
   creator?: User;
   linked_case?: Case;
+}
+
+// ============================================
+// DAILY REPORT TYPES
+// ============================================
+
+export interface DailyReport {
+  id: string;
+  user_id: string;
+  report_date: string;
+  opening_existing_callbacks: number;
+  opening_existing_followups: number;
+  opening_instocks_login: number;
+  opening_instocks_volume: number;
+  opening_instocks_approval: number;
+  opening_disbursed: number;
+  opening_login_commitment: number;
+  opening_expected_conversion: number;
+  opening_documents_pending: number;
+  opening_login_pending: number;
+  closing_existing_callbacks: number;
+  closing_existing_followups: number;
+  closing_total_logins: number;
+  closing_total_login_volume: number;
+  closing_total_approvals: number;
+  closing_total_disbursed: number;
+  closing_login_commitment: number;
+  closing_todays_conversion: number;
+  closing_todays_callback: number;
+  closing_documents_pending: number;
+  closing_login_pending: number;
+  closing_day_status: 'IN_PROGRESS' | 'COMPLETED';
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface DailyReportWithUser extends DailyReport {
+  user?: User;
 }
 
 // ============================================

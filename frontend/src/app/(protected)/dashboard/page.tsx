@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import PageHeader from '@/components/PageHeader';
 import Button from '@/components/Button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,7 +26,8 @@ import {
   Bell,
 } from 'lucide-react';
 import api, { API_URL } from '@/lib/api';
-import { crmService, Case, CASE_STATUSES, CaseNotification } from '@/lib/crm';
+import { crmService, Case, CASE_STATUSES } from '@/lib/crm';
+import { AppNotification } from '@/lib/notifications';
 import { taskService, Task } from '@/lib/tasks';
 import { format, differenceInDays, isAfter, isBefore, addDays } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -65,6 +67,7 @@ interface CaseStatistics {
 
 export default function DashboardPage() {
   const { user, hasPermission } = useAuth();
+  const { notifications: contextNotifications } = useNotifications();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'individual' | 'team'>('individual');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -90,10 +93,43 @@ export default function DashboardPage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [allCases, setAllCases] = useState<Case[]>([]);
   const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
-  const [upcomingNotifications, setUpcomingNotifications] = useState<CaseNotification[]>([]);
   const [recognitions, setRecognitions] = useState<Recognition[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentAnnouncementIndex, setCurrentAnnouncementIndex] = useState(0);
+
+  const upcomingNotifications = useMemo(() => {
+    const now = new Date();
+    const sevenDaysFromNow = addDays(now, 7);
+    return contextNotifications
+      .filter((notif: AppNotification) => {
+        if (!notif.scheduled_at) return false;
+        const scheduledDate = new Date(notif.scheduled_at);
+        return isAfter(scheduledDate, now) && isBefore(scheduledDate, sevenDaysFromNow) && !notif.is_read;
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.scheduled_at!).getTime();
+        const dateB = new Date(b.scheduled_at!).getTime();
+        return dateA - dateB;
+      })
+      .slice(0, 5);
+  }, [contextNotifications]);
+
+  const upcomingCaseReminders = useMemo(() => {
+    const now = new Date();
+    const sevenDaysFromNow = addDays(now, 7);
+    return allCases
+      .filter((c: Case) => {
+        if (!c.reminder_date) return false;
+        const reminderDate = new Date(c.reminder_date);
+        return isAfter(reminderDate, now) && isBefore(reminderDate, sevenDaysFromNow);
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.reminder_date!).getTime();
+        const dateB = new Date(b.reminder_date!).getTime();
+        return dateA - dateB;
+      })
+      .slice(0, 5);
+  }, [allCases]);
 
   const calculateStatistics = useCallback((cases: Case[], isTeam: boolean = false): CaseStatistics => {
     const stats: CaseStatistics = {
@@ -231,33 +267,6 @@ export default function DashboardPage() {
           })
       );
 
-      // Load upcoming notifications
-      promises.push(
-        crmService.getUserNotifications({ limit: 50, is_read: false })
-          .then((res) => {
-            const now = new Date();
-            const sevenDaysFromNow = addDays(now, 7);
-            const upcoming = res.notifications
-              .filter((notif: CaseNotification) => {
-                if (!notif.scheduled_at) return false;
-                const scheduledDate = new Date(notif.scheduled_at);
-                return isAfter(scheduledDate, now) && isBefore(scheduledDate, sevenDaysFromNow);
-              })
-              .sort((a: CaseNotification, b: CaseNotification) => {
-                const dateA = new Date(a.scheduled_at!).getTime();
-                const dateB = new Date(b.scheduled_at!).getTime();
-                return dateA - dateB;
-              })
-              .slice(0, 5); // Show top 5
-            setUpcomingNotifications(upcoming);
-            return { success: true };
-          })
-          .catch(() => {
-            setUpcomingNotifications([]);
-            return { success: false };
-          })
-      );
-
       // Load recognitions
       promises.push(
         api.get('/admin/recognitions', { params: { activeOnly: 'true' } })
@@ -369,145 +378,6 @@ export default function DashboardPage() {
         title="Dashboard"
         description={`Welcome back, ${user?.firstName}!`}
       />
-
-      {/* Case Statistics Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">Case Statistics</h2>
-          <div className="flex items-center gap-4">
-            {/* Month Filter */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Month:</label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              >
-                {(() => {
-                  const options = [];
-                  const now = new Date();
-                  for (let i = 0; i < 12; i++) {
-                    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const value = `${year}-${month}`;
-                    const label = format(date, 'MMMM yyyy');
-                    options.push({ value, label });
-                  }
-                  return options.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ));
-                })()}
-              </select>
-            </div>
-            {hasTeamAccess && (
-              <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setActiveTab('individual')}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                    activeTab === 'individual'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Individual
-                </button>
-                <button
-                  onClick={() => setActiveTab('team')}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                    activeTab === 'team'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Team
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-          >
-            {/* COUNT Cards */}
-            <div className="bg-blue-100 rounded-lg p-4 border-2 border-blue-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-blue-900">New Cases</p>
-                <Briefcase className="w-5 h-5 text-blue-700" />
-              </div>
-              <p className="text-2xl font-bold text-blue-900">
-                {loading ? '...' : currentStats.newCases}
-              </p>
-              <p className="text-xs text-blue-800 mt-1">Count</p>
-            </div>
-
-            <div className="bg-purple-100 rounded-lg p-4 border-2 border-purple-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-purple-900">Login Cases</p>
-                <FileText className="w-5 h-5 text-purple-700" />
-              </div>
-              <p className="text-2xl font-bold text-purple-900">
-                {loading ? '...' : currentStats.loginCases}
-              </p>
-              <p className="text-xs text-purple-800 mt-1">Count</p>
-            </div>
-
-            {/* AMOUNT Cards */}
-            <div className="bg-indigo-100 rounded-lg p-4 border-2 border-indigo-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-indigo-900">Underwriting Amount</p>
-                <TrendingUp className="w-5 h-5 text-indigo-700" />
-              </div>
-              <p className="text-2xl font-bold text-indigo-900">
-                {loading ? '...' : formatAmount(currentStats.underwritingAmount)}
-              </p>
-              <p className="text-xs text-indigo-800 mt-1">Amount</p>
-            </div>
-
-            <div className="bg-green-100 rounded-lg p-4 border-2 border-green-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-green-900">Approved Amount</p>
-                <CheckCircle className="w-5 h-5 text-green-700" />
-              </div>
-              <p className="text-2xl font-bold text-green-900">
-                {loading ? '...' : formatAmount(currentStats.approvedAmount)}
-              </p>
-              <p className="text-xs text-green-800 mt-1">Amount</p>
-            </div>
-
-            <div className="bg-teal-100 rounded-lg p-4 border-2 border-teal-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-teal-900">Disbursed Amount</p>
-                <IndianRupee className="w-5 h-5 text-teal-700" />
-              </div>
-              <p className="text-2xl font-bold text-teal-900">
-                {loading ? '...' : formatAmount(currentStats.disbursedAmount)}
-              </p>
-              <p className="text-xs text-teal-800 mt-1">Amount</p>
-            </div>
-
-            <div className="bg-red-100 rounded-lg p-4 border-2 border-red-300">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-red-900">Rejected Amount</p>
-                <XCircle className="w-5 h-5 text-red-700" />
-              </div>
-              <p className="text-2xl font-bold text-red-900">
-                {loading ? '...' : formatAmount(currentStats.rejectedAmount)}
-              </p>
-              <p className="text-xs text-red-800 mt-1">Amount</p>
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
 
       {/* Two Column Layout: Announcements and Upcoming Tasks/Notifications */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -736,9 +606,63 @@ export default function DashboardPage() {
                   </motion.div>
                 );
               })}
+
+              {/* Upcoming Case Reminders */}
+              {upcomingCaseReminders.map((caseItem, index) => {
+                const reminderDate = new Date(caseItem.reminder_date!);
+                const daysUntilReminder = differenceInDays(reminderDate, new Date());
+                const isUrgent = daysUntilReminder <= 2;
+                
+                return (
+                  <motion.div
+                    key={`case-reminder-${caseItem.id}`}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: (upcomingTasks.length + upcomingNotifications.length + index) * 0.05 }}
+                    onClick={() => router.push(`/crm/cases/${caseItem.id}`)}
+                    className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
+                      isUrgent
+                        ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                        : 'bg-purple-50 border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Calendar className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isUrgent ? 'text-red-600' : 'text-purple-600'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                            {caseItem.case_number}
+                          </h3>
+                          <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
+                            caseItem.priority === 'HIGH'
+                              ? 'bg-red-100 text-red-700'
+                              : caseItem.priority === 'MEDIUM'
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {caseItem.priority}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                          <Clock className="w-3 h-3" />
+                          <span className={isUrgent ? 'font-semibold text-red-700' : ''}>
+                            Reminder: {format(reminderDate, 'MMM dd, yyyy')}
+                            {daysUntilReminder === 0 && ' (Today)'}
+                            {daysUntilReminder === 1 && ' (Tomorrow)'}
+                            {daysUntilReminder > 1 && ` (${daysUntilReminder} days)`}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">
+                          {caseItem.customer_name}
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             
             {/* Empty state */}
-            {upcomingTasks.length === 0 && upcomingNotifications.length === 0 && (
+            {upcomingTasks.length === 0 && upcomingNotifications.length === 0 && upcomingCaseReminders.length === 0 && (
               <div className="text-center py-8">
                 <Clock className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="text-sm text-gray-600">No due dates to show</p>
@@ -746,6 +670,145 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Case Statistics Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <h2 className="text-lg font-semibold text-gray-900">Case Statistics</h2>
+          <div className="flex items-center gap-4">
+            {/* Month Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Month:</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              >
+                {(() => {
+                  const options = [];
+                  const now = new Date();
+                  for (let i = 0; i < 12; i++) {
+                    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const value = `${year}-${month}`;
+                    const label = format(date, 'MMMM yyyy');
+                    options.push({ value, label });
+                  }
+                  return options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ));
+                })()}
+              </select>
+            </div>
+            {hasTeamAccess && (
+              <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setActiveTab('individual')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'individual'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Individual
+                </button>
+                <button
+                  onClick={() => setActiveTab('team')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'team'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Team
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          >
+            {/* COUNT Cards */}
+            <div className="bg-blue-100 rounded-lg p-4 border-2 border-blue-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-blue-900">New Cases</p>
+                <Briefcase className="w-5 h-5 text-blue-700" />
+              </div>
+              <p className="text-2xl font-bold text-blue-900">
+                {loading ? '...' : currentStats.newCases}
+              </p>
+              <p className="text-xs text-blue-800 mt-1">Count</p>
+            </div>
+
+            <div className="bg-purple-100 rounded-lg p-4 border-2 border-purple-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-purple-900">Login Cases</p>
+                <FileText className="w-5 h-5 text-purple-700" />
+              </div>
+              <p className="text-2xl font-bold text-purple-900">
+                {loading ? '...' : currentStats.loginCases}
+              </p>
+              <p className="text-xs text-purple-800 mt-1">Count</p>
+            </div>
+
+            {/* AMOUNT Cards */}
+            <div className="bg-indigo-100 rounded-lg p-4 border-2 border-indigo-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-indigo-900">Underwriting Amount</p>
+                <TrendingUp className="w-5 h-5 text-indigo-700" />
+              </div>
+              <p className="text-2xl font-bold text-indigo-900">
+                {loading ? '...' : formatAmount(currentStats.underwritingAmount)}
+              </p>
+              <p className="text-xs text-indigo-800 mt-1">Amount</p>
+            </div>
+
+            <div className="bg-green-100 rounded-lg p-4 border-2 border-green-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-green-900">Approved Amount</p>
+                <CheckCircle className="w-5 h-5 text-green-700" />
+              </div>
+              <p className="text-2xl font-bold text-green-900">
+                {loading ? '...' : formatAmount(currentStats.approvedAmount)}
+              </p>
+              <p className="text-xs text-green-800 mt-1">Amount</p>
+            </div>
+
+            <div className="bg-teal-100 rounded-lg p-4 border-2 border-teal-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-teal-900">Disbursed Amount</p>
+                <IndianRupee className="w-5 h-5 text-teal-700" />
+              </div>
+              <p className="text-2xl font-bold text-teal-900">
+                {loading ? '...' : formatAmount(currentStats.disbursedAmount)}
+              </p>
+              <p className="text-xs text-teal-800 mt-1">Amount</p>
+            </div>
+
+            <div className="bg-red-100 rounded-lg p-4 border-2 border-red-300">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-red-900">Rejected Amount</p>
+                <XCircle className="w-5 h-5 text-red-700" />
+              </div>
+              <p className="text-2xl font-bold text-red-900">
+                {loading ? '...' : formatAmount(currentStats.rejectedAmount)}
+              </p>
+              <p className="text-xs text-red-800 mt-1">Amount</p>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Recognition & Achievements Section */}

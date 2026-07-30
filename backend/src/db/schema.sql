@@ -158,6 +158,8 @@ CREATE TABLE IF NOT EXISTS crm_schema.cases (
     loan_type VARCHAR(100) NOT NULL,
     loan_amount DECIMAL(15, 2) NOT NULL,
     current_status VARCHAR(50) NOT NULL DEFAULT 'NEW',
+    priority VARCHAR(20) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('HIGH', 'MEDIUM', 'LOW')),
+    reminder_date TIMESTAMP,
     created_by UUID NOT NULL REFERENCES auth_schema.users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -207,6 +209,8 @@ CREATE TABLE IF NOT EXISTS crm_schema.case_notes (
 -- Create indexes for CRM tables
 CREATE INDEX IF NOT EXISTS idx_cases_case_number ON crm_schema.cases(case_number);
 CREATE INDEX IF NOT EXISTS idx_cases_current_status ON crm_schema.cases(current_status);
+CREATE INDEX IF NOT EXISTS idx_cases_priority ON crm_schema.cases(priority);
+CREATE INDEX IF NOT EXISTS idx_cases_reminder_date ON crm_schema.cases(reminder_date);
 CREATE INDEX IF NOT EXISTS idx_cases_created_by ON crm_schema.cases(created_by);
 CREATE INDEX IF NOT EXISTS idx_cases_created_at ON crm_schema.cases(created_at);
 CREATE INDEX IF NOT EXISTS idx_case_assignments_case_id ON crm_schema.case_assignments(case_id);
@@ -587,6 +591,108 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON task_schema.tasks(created_at)
 -- Trigger to update tasks updated_at timestamp
 CREATE TRIGGER trigger_update_tasks_updated_at
     BEFORE UPDATE ON task_schema.tasks
+    FOR EACH ROW
+    EXECUTE FUNCTION crm_schema.update_updated_at_column();
+
+-- ============================================
+-- NOTIFICATIONS
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS crm_schema.case_notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    case_id UUID NOT NULL REFERENCES crm_schema.cases(id) ON DELETE CASCADE,
+    scheduled_for UUID NOT NULL REFERENCES auth_schema.users(id),
+    scheduled_by UUID NOT NULL REFERENCES auth_schema.users(id),
+    message TEXT,
+    scheduled_at TIMESTAMP NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SENT', 'CANCELLED')),
+    is_read BOOLEAN NOT NULL DEFAULT false,
+    completion_status VARCHAR(20) NOT NULL DEFAULT 'ONGOING',
+    type VARCHAR(50) NOT NULL DEFAULT 'CASE_REMINDER',
+    title VARCHAR(255),
+    action_url VARCHAR(500),
+    metadata JSONB DEFAULT '{}'::jsonb,
+    document_id UUID REFERENCES crm_schema.documents(id) ON DELETE SET NULL,
+    change_request_id UUID REFERENCES crm_schema.customer_detail_change_requests(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_notifications_case_id ON crm_schema.case_notifications(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_scheduled_for ON crm_schema.case_notifications(scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_scheduled_by ON crm_schema.case_notifications(scheduled_by);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_scheduled_at ON crm_schema.case_notifications(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_status ON crm_schema.case_notifications(status);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_is_read ON crm_schema.case_notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_completion ON crm_schema.case_notifications(completion_status);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_type ON crm_schema.case_notifications(type);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_document_id ON crm_schema.case_notifications(document_id);
+CREATE INDEX IF NOT EXISTS idx_case_notifications_change_request_id ON crm_schema.case_notifications(change_request_id);
+
+CREATE TRIGGER trigger_update_case_notifications_updated_at
+    BEFORE UPDATE ON crm_schema.case_notifications
+    FOR EACH ROW
+    EXECUTE FUNCTION crm_schema.update_updated_at_column();
+
+CREATE TABLE IF NOT EXISTS crm_schema.notification_preferences (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth_schema.users(id) ON DELETE CASCADE,
+    notification_type VARCHAR(50) NOT NULL,
+    in_app BOOLEAN NOT NULL DEFAULT true,
+    email BOOLEAN NOT NULL DEFAULT false,
+    push BOOLEAN NOT NULL DEFAULT false,
+    digest_mode VARCHAR(20) NOT NULL DEFAULT 'IMMEDIATE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, notification_type)
+);
+
+CREATE TRIGGER trigger_update_notification_preferences_updated_at
+    BEFORE UPDATE ON crm_schema.notification_preferences
+    FOR EACH ROW
+    EXECUTE FUNCTION crm_schema.update_updated_at_column();
+
+-- ============================================
+-- DAILY REPORTS
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS finance_schema.daily_reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth_schema.users(id) ON DELETE CASCADE,
+    report_date DATE NOT NULL,
+    opening_existing_callbacks INTEGER NOT NULL DEFAULT 0,
+    opening_existing_followups INTEGER NOT NULL DEFAULT 0,
+    opening_instocks_login INTEGER NOT NULL DEFAULT 0,
+    opening_instocks_volume DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    opening_instocks_approval DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    opening_disbursed DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    opening_login_commitment INTEGER NOT NULL DEFAULT 0,
+    opening_expected_conversion INTEGER NOT NULL DEFAULT 0,
+    opening_documents_pending INTEGER NOT NULL DEFAULT 0,
+    opening_login_pending INTEGER NOT NULL DEFAULT 0,
+    closing_existing_callbacks INTEGER NOT NULL DEFAULT 0,
+    closing_existing_followups INTEGER NOT NULL DEFAULT 0,
+    closing_total_logins INTEGER NOT NULL DEFAULT 0,
+    closing_total_login_volume DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    closing_total_approvals DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    closing_total_disbursed DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    closing_login_commitment INTEGER NOT NULL DEFAULT 0,
+    closing_todays_conversion INTEGER NOT NULL DEFAULT 0,
+    closing_todays_callback INTEGER NOT NULL DEFAULT 0,
+    closing_documents_pending INTEGER NOT NULL DEFAULT 0,
+    closing_login_pending INTEGER NOT NULL DEFAULT 0,
+    closing_day_status VARCHAR(20) NOT NULL DEFAULT 'IN_PROGRESS' CHECK (closing_day_status IN ('IN_PROGRESS', 'COMPLETED')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, report_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_reports_user_id ON finance_schema.daily_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_daily_reports_report_date ON finance_schema.daily_reports(report_date);
+CREATE INDEX IF NOT EXISTS idx_daily_reports_user_date ON finance_schema.daily_reports(user_id, report_date);
+
+CREATE TRIGGER trigger_update_daily_reports_updated_at
+    BEFORE UPDATE ON finance_schema.daily_reports
     FOR EACH ROW
     EXECUTE FUNCTION crm_schema.update_updated_at_column();
 

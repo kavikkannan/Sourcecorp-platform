@@ -47,12 +47,35 @@ router.get(
   CRMController.getScheduleableUsers
 );
 
+// Get upcoming case reminders (next 7 days) - must be before /cases/:id
+router.get(
+  '/cases/upcoming-reminders',
+  requirePermission('crm.case.view'),
+  CRMController.getUpcomingReminders
+);
+
 // Get case by ID
 router.get(
   '/cases/:id',
   requirePermission('crm.case.view'),
   validate(validators.caseIdSchema),
   CRMController.getCaseById
+);
+
+// Update case priority
+router.patch(
+  '/cases/:id/priority',
+  requirePermission('crm.case.update_status'),
+  validate(validators.updateCasePrioritySchema),
+  CRMController.updatePriority
+);
+
+// Update case reminder
+router.patch(
+  '/cases/:id/reminder',
+  requirePermission('crm.case.update_status'),
+  validate(validators.updateCaseReminderSchema),
+  CRMController.updateReminder
 );
 
 // Delete case
