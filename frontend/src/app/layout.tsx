@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import ToastProvider from '@/components/ToastProvider';
+import BirthdayBalloon from '@/components/BirthdayBalloon';
 
 export const metadata: Metadata = {
   title: 'Sourcecorp Solution Platform',
@@ -21,6 +22,7 @@ export default function RootLayout({
           <NotificationProvider>
             {children}
             <ToastProvider />
+            <BirthdayBalloon />
           </NotificationProvider>
         </AuthProvider>
       </body>
