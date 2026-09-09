@@ -21,8 +21,9 @@ export const exportWorker = new Worker(
                 userId,
                 userRole,
                 userTeams,
-                (progress: number) => {
-                    job.updateProgress(progress);
+                2, // Process 2 cases per batch
+                (payload: { progress: number; current: number; total: number }) => {
+                    job.updateProgress(payload);
                 }
             );
 

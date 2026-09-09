@@ -359,7 +359,7 @@ export default function CasesPage() {
 
       const response = await crmService.exportCases(idsToExport);
 
-      if (response.sync) {
+      if (response.status === 'completed') {
         setExportState((prev: any) => ({ ...prev, status: 'completed', progress: 100, jobId: response.jobId }));
         await downloadExport(response.jobId);
       } else {
@@ -381,13 +381,16 @@ export default function CasesPage() {
         const status = await crmService.getExportJobStatus(jobId);
         setExportState((prev: any) => ({ ...prev, progress: status.progress }));
 
-        if (status.state === 'completed') {
+        const isCompleted = status.state === 'completed' || status.status === 'completed';
+        const isFailed = status.state === 'failed' || status.status === 'failed';
+
+        if (isCompleted) {
           clearInterval(interval);
           setExportState((prev: any) => ({ ...prev, status: 'completed', progress: 100 }));
           await downloadExport(jobId);
-        } else if (status.state === 'failed') {
+        } else if (isFailed) {
           clearInterval(interval);
-          setExportState((prev: any) => ({ ...prev, status: 'error', errorText: 'Export job failed' }));
+          setExportState((prev: any) => ({ ...prev, status: 'error', errorText: status.error || 'Export job failed' }));
         }
       } catch (error) {
         clearInterval(interval);

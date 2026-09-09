@@ -1124,8 +1124,23 @@ export class CRMController {
         return res.status(400).json({ error: 'Valid caseIds array is required' });
       }
 
-      // 1. Audit log export start
-      const { AuditService } = require('../services/audit.service');
+      const userResult = await query(
+        `SELECT r.name as role_name
+         FROM auth_schema.users u
+         LEFT JOIN auth_schema.user_roles ur ON u.id = ur.user_id
+         LEFT JOIN auth_schema.roles r ON ur.role_id = r.id
+         WHERE u.id = $1`,
+        [userId]
+      );
+      const userRole = userResult.rows[0]?.role_name || 'employee';
+
+      const teamsResult = await query(
+        `SELECT team_id FROM auth_schema.team_members WHERE user_id = $1`,
+        [userId]
+      );
+      const userTeams = teamsResult.rows.map(row => row.team_id);
+
+      // Audit log export start
       await AuditService.createLog({
         userId,
         action: 'crm.case.export.start',
@@ -1135,30 +1150,15 @@ export class CRMController {
         userAgent: req.headers['user-agent'],
       });
 
-      // 2. Fetch user details to get hierarchy access mapping
-      const { CRMService } = require('../services/crm.service');
-      const { hierarchy, teams } = await CRMService.getExportAccessDetails(userId);
-
-      // 3. Initiate the export via ExportService
-      const { ExportService } = require('../services/export.service');
-      const exportResult = await ExportService.generateCaseArchiveFile({
-        caseIds,
-        userId,
-        // Passing user context down to respect RBAC/hierarchy inside the service
-        hierarchy,
-        teams,
-      });
+      const exportResult = await ExportService.startExport(caseIds, userId, userRole, userTeams);
 
       if (exportResult.type === 'sync') {
-        // Prepare immediate download for sync export
-        // Determine exact path, return standard response payload instructing frontend to download
         return res.status(200).json({
           status: 'completed',
           jobId: exportResult.jobId,
           message: 'Export completed synchronously'
         });
       } else {
-        // Async queue response
         return res.status(202).json({
           status: 'processing',
           jobId: exportResult.jobId,
@@ -1180,17 +1180,12 @@ export class CRMController {
     try {
       const { jobId } = req.params;
 
-      const { QueueService } = require('../services/queue.service');
-
-      // Attempt to check if job is finished by checking fs
-      const { ExportService } = require('../services/export.service');
       const fsJobStatus = await ExportService.checkExportJobFilepathStatus(jobId);
 
       if (fsJobStatus.status === 'completed') {
         return res.status(200).json(fsJobStatus);
       }
 
-      // Check redis job status
       const jobStatus = await QueueService.getExportJobStatus(jobId);
 
       if (!jobStatus) {
@@ -1214,16 +1209,12 @@ export class CRMController {
       const { jobId } = req.params;
       const userId = req.user!.userId;
 
-      const { ExportService } = require('../services/export.service');
-      const { AuditService } = require('../services/audit.service');
-
       const archivePath = await ExportService.getExportArchivePath(jobId);
 
       if (!archivePath) {
         return res.status(404).json({ error: 'Archive file not found or expired' });
       }
 
-      // Audit the download action
       await AuditService.createLog({
         userId,
         action: 'crm.case.export.download',
@@ -1239,6 +1230,182 @@ export class CRMController {
 
     } catch (error: any) {
       console.error('Error downloading export archive:', error);
+      return res.status(500).json({ error: 'Failed to download archive file' });
+    }
+  }
+
+  /**
+   * GET /api/admin/cases
+   * List all cases for admin export (no RBAC)
+   */
+  static async getAllCasesForAdmin(req: AuthRequest, res: Response) {
+    try {
+      const { status, loan_type, priority, month, search, created_from, created_to, limit = '20', offset = '0' } = req.query;
+
+      const result = await CRMService.getAllCasesForAdmin({
+        status: status as string | undefined,
+        loan_type: loan_type as string | undefined,
+        priority: priority as string | undefined,
+        month: month as string | undefined,
+        search: search as string | undefined,
+        created_from: created_from as string | undefined,
+        created_to: created_to as string | undefined,
+        limit: parseInt(limit as string, 10),
+        offset: parseInt(offset as string, 10),
+      });
+
+      res.json({
+        cases: result.cases.map(c => ({
+          id: c.id,
+          case_number: c.case_number,
+          customer_name: c.customer_name,
+          customer_email: c.customer_email,
+          customer_phone: c.customer_phone,
+          loan_type: c.loan_type,
+          loan_amount: c.loan_amount,
+          source_type: c.source_type,
+          current_status: c.current_status,
+          priority: c.priority,
+          reminder_date: c.reminder_date,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+          creator: c.creator ? {
+            id: c.creator.id,
+            email: c.creator.email,
+            name: `${c.creator.first_name} ${c.creator.last_name}`,
+          } : undefined,
+          current_assignee: c.current_assignment?.assignee ? {
+            id: c.current_assignment.assignee.id,
+            email: c.current_assignment.assignee.email,
+            name: `${c.current_assignment.assignee.first_name} ${c.current_assignment.assignee.last_name}`,
+          } : undefined,
+        })),
+        total: result.total,
+        limit: parseInt(limit as string, 10),
+        offset: parseInt(offset as string, 10),
+      });
+    } catch (error: any) {
+      console.error('Error in getAllCasesForAdmin:', error);
+      return res.status(500).json({ error: error.message || 'Failed to fetch cases' });
+    }
+  }
+
+  /**
+   * POST /api/admin/cases/export
+   * Admin export with optional filters (no RBAC)
+   */
+  static async adminExportCases(req: AuthRequest, res: Response) {
+    try {
+      const { caseIds, filters, exportAll } = req.body;
+      const userId = req.user!.userId;
+
+      let idsToExport: string[] = [];
+
+      if (exportAll === true) {
+        idsToExport = await CRMService.getAllCaseIdsForAdmin();
+      } else if (Array.isArray(caseIds) && caseIds.length > 0) {
+        idsToExport = caseIds;
+      } else if (filters && typeof filters === 'object') {
+        idsToExport = await CRMService.getAllCaseIdsForAdmin({
+          status: filters.status,
+          loan_type: filters.loan_type,
+          priority: filters.priority,
+          month: filters.month,
+          search: filters.search,
+          created_from: filters.created_from,
+          created_to: filters.created_to,
+        });
+      }
+
+      if (idsToExport.length === 0) {
+        return res.status(400).json({ error: 'No cases selected for export' });
+      }
+
+      await AuditService.createLog({
+        userId,
+        action: 'admin.case.export.start',
+        resourceType: 'case_export',
+        details: { case_ids: idsToExport, count: idsToExport.length },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      // Admins bypass normal RBAC by passing an admin role string
+      const exportResult = await ExportService.startExport(idsToExport, userId, 'admin', []);
+
+      if (exportResult.type === 'sync') {
+        return res.status(200).json({
+          status: 'completed',
+          jobId: exportResult.jobId,
+          message: 'Export completed synchronously'
+        });
+      } else {
+        return res.status(202).json({
+          status: 'processing',
+          jobId: exportResult.jobId,
+          message: 'Export started in background. Polling expected.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in adminExportCases:', error);
+      return res.status(500).json({ error: error.message || 'Failed to initiate admin export' });
+    }
+  }
+
+  /**
+   * GET /api/admin/cases/export/:jobId
+   */
+  static async getAdminExportJobStatus(req: AuthRequest, res: Response) {
+    try {
+      const { jobId } = req.params;
+
+      const fsJobStatus = await ExportService.checkExportJobFilepathStatus(jobId);
+
+      if (fsJobStatus.status === 'completed') {
+        return res.status(200).json(fsJobStatus);
+      }
+
+      const jobStatus = await QueueService.getExportJobStatus(jobId);
+
+      if (!jobStatus) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      return res.status(200).json(jobStatus);
+    } catch (error: any) {
+      console.error('Error getting admin export status:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get export status' });
+    }
+  }
+
+  /**
+   * GET /api/admin/cases/export/download/:jobId
+   */
+  static async downloadAdminExportArchive(req: AuthRequest, res: Response) {
+    try {
+      const { jobId } = req.params;
+      const userId = req.user!.userId;
+
+      const archivePath = await ExportService.getExportArchivePath(jobId);
+
+      if (!archivePath) {
+        return res.status(404).json({ error: 'Archive file not found or expired' });
+      }
+
+      await AuditService.createLog({
+        userId,
+        action: 'admin.case.export.download',
+        resourceType: 'case_export',
+        resourceId: jobId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename=admin-case-export-${jobId}.zip`);
+      res.download(archivePath);
+    } catch (error: any) {
+      console.error('Error downloading admin export archive:', error);
       return res.status(500).json({ error: 'Failed to download archive file' });
     }
   }

@@ -428,12 +428,12 @@ export const crmService = {
   },
 
   // Case Archive Export
-  async exportCases(caseIds: string[]): Promise<{ jobId: string; status: string; sync: boolean }> {
+  async exportCases(caseIds: string[]): Promise<{ jobId: string; status: string; message: string }> {
     const response = await api.post('/crm/cases/export', { caseIds });
     return response.data;
   },
 
-  async getExportJobStatus(jobId: string): Promise<{ id: string; state: string; progress: number }> {
+  async getExportJobStatus(jobId: string): Promise<{ id?: string; state?: string; status?: string; progress: number; filePath?: string; error?: string }> {
     const response = await api.get(`/crm/cases/export/${jobId}`);
     return response.data;
   },

@@ -325,6 +325,221 @@ export class CRMService {
     };
   }
 
+  static async getAllCasesForAdmin(filters: {
+    status?: string;
+    loan_type?: string;
+    priority?: string;
+    month?: string;
+    search?: string;
+    created_from?: string;
+    created_to?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ cases: CaseWithDetails[], total: number }> {
+    const { status, loan_type, priority, month, search, created_from, created_to, limit = 20, offset = 0 } = filters;
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      whereClause += ` AND c.current_status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (loan_type) {
+      whereClause += ` AND c.loan_type = $${paramIndex}`;
+      params.push(loan_type);
+      paramIndex++;
+    }
+
+    if (priority) {
+      whereClause += ` AND c.priority = $${paramIndex}`;
+      params.push(priority);
+      paramIndex++;
+    }
+
+    if (month) {
+      const [year, monthNum] = month.split('-');
+      whereClause += ` AND EXTRACT(YEAR FROM c.created_at) = $${paramIndex} AND EXTRACT(MONTH FROM c.created_at) = $${paramIndex + 1}`;
+      params.push(parseInt(year), parseInt(monthNum));
+      paramIndex += 2;
+    }
+
+    if (created_from) {
+      whereClause += ` AND c.created_at >= $${paramIndex}`;
+      params.push(new Date(created_from));
+      paramIndex++;
+    }
+
+    if (created_to) {
+      whereClause += ` AND c.created_at <= $${paramIndex}`;
+      params.push(new Date(created_to));
+      paramIndex++;
+    }
+
+    if (search?.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      whereClause += ` AND (
+        c.case_number ILIKE $${paramIndex}
+        OR c.customer_name ILIKE $${paramIndex}
+        OR c.customer_email ILIKE $${paramIndex}
+        OR c.customer_phone ILIKE $${paramIndex}
+      )`;
+      params.push(searchTerm);
+      paramIndex++;
+    }
+
+    params.push(limit, offset);
+
+    const result = await query(
+      `SELECT
+        c.*,
+        creator.id as creator_id,
+        creator.email as creator_email,
+        creator.first_name as creator_first_name,
+        creator.last_name as creator_last_name,
+        assignee.id as assignee_id,
+        assignee.email as assignee_email,
+        assignee.first_name as assignee_first_name,
+        assignee.last_name as assignee_last_name
+       FROM crm_schema.cases c
+       LEFT JOIN auth_schema.users creator ON c.created_by = creator.id
+       LEFT JOIN LATERAL (
+         SELECT * FROM crm_schema.case_assignments
+         WHERE case_id = c.id
+         ORDER BY assigned_at DESC
+         LIMIT 1
+       ) ca ON true
+       LEFT JOIN auth_schema.users assignee ON ca.assigned_to = assignee.id
+       ${whereClause}
+       ORDER BY c.created_at DESC
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+      params
+    );
+
+    const countResult = await query(
+      `SELECT COUNT(DISTINCT c.id) as total
+       FROM crm_schema.cases c
+       ${whereClause}`,
+      params.slice(0, -2)
+    );
+
+    const cases = result.rows.map(row => ({
+      id: row.id,
+      case_number: row.case_number,
+      customer_name: row.customer_name,
+      customer_email: row.customer_email,
+      customer_phone: row.customer_phone,
+      loan_type: row.loan_type,
+      loan_amount: parseFloat(row.loan_amount),
+      source_type: row.source_type,
+      current_status: row.current_status,
+      priority: row.priority || 'MEDIUM',
+      reminder_date: row.reminder_date,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      creator: row.creator_id ? {
+        id: row.creator_id,
+        email: row.creator_email,
+        first_name: row.creator_first_name,
+        last_name: row.creator_last_name,
+      } : undefined,
+      current_assignment: row.assignee_id ? {
+        id: row.assignee_id,
+        assigned_to: row.assignee_id,
+        assignee: {
+          id: row.assignee_id,
+          email: row.assignee_email,
+          first_name: row.assignee_first_name,
+          last_name: row.assignee_last_name,
+        }
+      } : undefined,
+    }));
+
+    return {
+      cases,
+      total: parseInt(countResult.rows[0].total, 10),
+    };
+  }
+
+  static async getAllCaseIdsForAdmin(filters: {
+    status?: string;
+    loan_type?: string;
+    priority?: string;
+    month?: string;
+    search?: string;
+    created_from?: string;
+    created_to?: string;
+  } = {}): Promise<string[]> {
+    const { status, loan_type, priority, month, search, created_from, created_to } = filters;
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      whereClause += ` AND c.current_status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (loan_type) {
+      whereClause += ` AND c.loan_type = $${paramIndex}`;
+      params.push(loan_type);
+      paramIndex++;
+    }
+
+    if (priority) {
+      whereClause += ` AND c.priority = $${paramIndex}`;
+      params.push(priority);
+      paramIndex++;
+    }
+
+    if (month) {
+      const [year, monthNum] = month.split('-');
+      whereClause += ` AND EXTRACT(YEAR FROM c.created_at) = $${paramIndex} AND EXTRACT(MONTH FROM c.created_at) = $${paramIndex + 1}`;
+      params.push(parseInt(year), parseInt(monthNum));
+      paramIndex += 2;
+    }
+
+    if (created_from) {
+      whereClause += ` AND c.created_at >= $${paramIndex}`;
+      params.push(new Date(created_from));
+      paramIndex++;
+    }
+
+    if (created_to) {
+      whereClause += ` AND c.created_at <= $${paramIndex}`;
+      params.push(new Date(created_to));
+      paramIndex++;
+    }
+
+    if (search?.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      whereClause += ` AND (
+        c.case_number ILIKE $${paramIndex}
+        OR c.customer_name ILIKE $${paramIndex}
+        OR c.customer_email ILIKE $${paramIndex}
+        OR c.customer_phone ILIKE $${paramIndex}
+      )`;
+      params.push(searchTerm);
+      paramIndex++;
+    }
+
+    const result = await query(
+      `SELECT c.id
+       FROM crm_schema.cases c
+       ${whereClause}
+       ORDER BY c.created_at DESC`,
+      params
+    );
+
+    return result.rows.map((row) => row.id);
+  }
+
   static async getCaseById(caseId: string, userId: string, userRole: string): Promise<CaseWithDetails | null> {
     const result = await query(
       `SELECT 

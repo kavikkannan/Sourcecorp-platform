@@ -6,6 +6,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import archiver from 'archiver';
 import { CRMService } from './crm.service';
+import { QueueService } from './queue.service';
+import { v4 as uuidv4 } from 'uuid';
 
 export class ExportService {
 
@@ -951,106 +953,216 @@ export class ExportService {
   // CASE ARCHIVE EXPORT
   // ============================================
 
+  private static sanitizeFolderName(input: string): string {
+    return (input || '')
+      .replace(/[^a-zA-Z0-9\u00C0-\u017F\s._-]/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .trim()
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 100);
+  }
+
+  static getExportsDir(): string {
+    return path.join(process.cwd(), 'uploads', 'exports');
+  }
+
+  static async getExportArchivePath(jobId: string): Promise<string | null> {
+    const exportsDir = ExportService.getExportsDir();
+    try {
+      const files = await fs.promises.readdir(exportsDir);
+      const match = files.find((f) => f.includes(jobId) && f.endsWith('.zip'));
+      return match ? path.join(exportsDir, match) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  static async checkExportJobFilepathStatus(jobId: string): Promise<{ status: string; progress: number; filePath?: string }> {
+    const filePath = await ExportService.getExportArchivePath(jobId);
+    if (filePath) {
+      return { status: 'completed', progress: 100, filePath };
+    }
+    return { status: 'processing', progress: 0 };
+  }
+
+  static async startExport(
+    caseIds: string[],
+    userId: string,
+    userRole: string,
+    userTeams: string[] = []
+  ): Promise<{ type: 'sync' | 'async'; jobId: string }> {
+    if (!caseIds.length) {
+      throw new Error('No cases selected for export');
+    }
+
+    const jobId = uuidv4();
+
+    // Single-case exports run synchronously; anything larger goes to the worker in batches.
+    const SYNC_THRESHOLD = 1;
+    if (caseIds.length <= SYNC_THRESHOLD) {
+      await ExportService.generateCaseArchiveFile(jobId, caseIds, userId, userRole, userTeams, undefined, () => {
+        // Sync progress is not tracked elsewhere, but method signature supports it.
+      });
+      return { type: 'sync', jobId };
+    }
+
+    await QueueService.addExportJob(jobId, { caseIds, userId, userRole, userTeams });
+    return { type: 'async', jobId };
+  }
+
   static async generateCaseArchiveFile(
     jobId: string,
     caseIds: string[],
     userId: string,
     userRole: string,
     userTeams: string[],
-    onProgress?: (progress: number) => void
+    batchSize = 2,
+    onProgress?: (payload: { progress: number; current: number; total: number }) => void
   ): Promise<string> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const exportsDir = path.join(process.cwd(), 'uploads', 'exports');
-        await fs.promises.mkdir(exportsDir, { recursive: true });
+    const exportsDir = ExportService.getExportsDir();
+    await fs.promises.mkdir(exportsDir, { recursive: true });
 
-        const fileName = `cases_export_${Date.now()}_${jobId}.zip`;
-        const filePath = path.join(exportsDir, fileName);
+    const baseName = `cases_export_${Date.now()}_${jobId}`;
+    const tempFilePath = path.join(exportsDir, `${baseName}.zip.tmp`);
+    const finalFilePath = path.join(exportsDir, `${baseName}.zip`);
 
-        const output = fs.createWriteStream(filePath);
-        const archive = archiver('zip', {
-          zlib: { level: 9 }, // Maximum compression
-        });
+    return new Promise<string>((resolve, reject) => {
+      let finished = false;
+      const settle = async (value?: string, error?: Error) => {
+        if (finished) return;
+        finished = true;
+        if (error) {
+          // Clean up incomplete temp file on error
+          try { await fs.promises.unlink(tempFilePath); } catch {}
+          reject(error);
+        } else if (value) {
+          // Rename temp file to final only after the stream has fully closed
+          try {
+            await fs.promises.rename(tempFilePath, finalFilePath);
+            resolve(finalFilePath);
+          } catch (renameErr: any) {
+            reject(renameErr);
+          }
+        }
+      };
 
-        output.on('close', () => {
-          resolve(filePath);
-        });
+      const output = fs.createWriteStream(tempFilePath);
+      const archive = archiver('zip', {
+        zlib: { level: 9 }, // Maximum compression
+      });
 
-        archive.on('error', (err) => {
-          reject(err);
-        });
+      output.on('close', () => {
+        settle(finalFilePath);
+      });
 
-        archive.pipe(output);
+      output.on('error', (err) => {
+        settle(undefined, err);
+      });
 
+      archive.on('error', (err) => {
+        settle(undefined, err);
+        output.destroy();
+      });
+
+      archive.on('warning', (err) => {
+        // Only treat non-ENOENT warnings as fatal
+        if (err.code !== 'ENOENT') {
+          settle(undefined, err);
+          output.destroy();
+        }
+      });
+
+      archive.pipe(output);
+
+      const processCases = async () => {
         const totalCases = caseIds.length;
+        let processedCount = 0;
 
-        for (let i = 0; i < totalCases; i++) {
-          const caseId = caseIds[i];
+        for (let i = 0; i < totalCases; i += batchSize) {
+          if (finished) return;
 
-          // 1. Fetch case details - checks RBAC implicitly!
-          const caseData = await CRMService.getCaseById(caseId, userId, userRole);
+          const batch = caseIds.slice(i, i + batchSize);
 
-          if (!caseData) {
-            // User has no access, or case doesn't exist. Skip safely.
-            continue;
-          }
+          for (const caseId of batch) {
+            if (finished) return;
 
-          const caseFolder = `case_${caseData.case_number}`;
+            // Fetch case details - checks RBAC implicitly!
+            const caseData = await CRMService.getCaseById(caseId, userId, userRole);
 
-          // Add basic case summary JSON
-          archive.append(JSON.stringify(caseData, null, 2), {
-            name: `${caseFolder}/case-summary.json`,
-          });
-
-          // Fetch other data in parallel
-          const [notes, timeline, notifications, documents] = await Promise.all([
-            CRMService.getNotes(caseId),
-            CRMService.getTimeline(caseId),
-            CRMService.getCaseNotifications(caseId),
-            CRMService.getDocuments(caseId),
-          ]);
-
-          archive.append(JSON.stringify(notes, null, 2), {
-            name: `${caseFolder}/notes.json`,
-          });
-
-          archive.append(JSON.stringify(timeline, null, 2), {
-            name: `${caseFolder}/timeline.json`,
-          });
-
-          archive.append(JSON.stringify(notifications, null, 2), {
-            name: `${caseFolder}/notifications.json`,
-          });
-
-          // Process documents
-          for (const doc of documents) {
-            try {
-              if (doc.file_path) {
-                // Check if file exists using access
-                await fs.promises.access(doc.file_path);
-                archive.file(doc.file_path, { name: `${caseFolder}/documents/${doc.file_name}` });
-              }
-            } catch (err) {
-              // If file is missing, we could skip or document the error. Let's append an error note.
-              archive.append(`File not found on system: ${doc.file_path}`, {
-                name: `${caseFolder}/documents/ERROR_${doc.file_name}.txt`
-              });
+            if (!caseData) {
+              // User has no access, or case doesn't exist. Skip safely.
+              processedCount++;
+              continue;
             }
+
+            const sanitizedCustomerName = ExportService.sanitizeFolderName(caseData.customer_name);
+            const caseFolder = sanitizedCustomerName
+              ? `${caseData.case_number}_${sanitizedCustomerName}`
+              : caseData.case_number;
+
+            // Add basic case details JSON
+            archive.append(JSON.stringify(caseData, null, 2), {
+              name: `${caseFolder}/case-details.json`,
+            });
+
+            // Fetch other data in parallel
+            const [notes, timeline, notifications, documents] = await Promise.all([
+              CRMService.getNotes(caseId),
+              CRMService.getTimeline(caseId),
+              CRMService.getCaseNotifications(caseId),
+              CRMService.getDocuments(caseId),
+            ]);
+
+            archive.append(JSON.stringify(notes, null, 2), {
+              name: `${caseFolder}/notes.json`,
+            });
+
+            archive.append(JSON.stringify(timeline, null, 2), {
+              name: `${caseFolder}/timeline.json`,
+            });
+
+            archive.append(JSON.stringify(notifications, null, 2), {
+              name: `${caseFolder}/notifications.json`,
+            });
+
+            // Process documents
+            for (const doc of documents) {
+              try {
+                if (doc.file_path) {
+                  // Check if file exists using access
+                  await fs.promises.access(doc.file_path);
+                  archive.file(doc.file_path, { name: `${caseFolder}/case docs/${doc.file_name}` });
+                }
+              } catch (err) {
+                // If file is missing, we could skip or document the error. Let's append an error note.
+                archive.append(`File not found on system: ${doc.file_path}`, {
+                  name: `${caseFolder}/case docs/ERROR_${doc.file_name}.txt`
+                });
+              }
+            }
+
+            processedCount++;
           }
 
-          // Progress update
-          if (onProgress) {
-            const progress = Math.round(((i + 1) / totalCases) * 100);
-            onProgress(progress);
+          // Yield to the event loop so the archiver stream can flush between batches.
+          await new Promise<void>((tick) => setImmediate(tick));
+
+          // Progress update after the batch
+          if (onProgress && !finished) {
+            const progress = Math.round((processedCount / totalCases) * 100);
+            onProgress({ progress, current: processedCount, total: totalCases });
           }
         }
 
-        // Finalize limits the stream explicitly
+        // Finalize explicitly; errors are caught by the outer try/catch and archive error handler.
         await archive.finalize();
+      };
 
-      } catch (error) {
-        reject(error);
-      }
+      processCases().catch((err) => {
+        settle(undefined, err);
+        try { output.destroy(); } catch {}
+      });
     });
   }
 }

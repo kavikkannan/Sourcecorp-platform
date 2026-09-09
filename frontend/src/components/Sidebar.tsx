@@ -27,6 +27,7 @@ import {
   ListTodo,
   Award,
   BarChart3,
+  Archive,
 } from 'lucide-react';
 
 interface NavItem {
@@ -172,6 +173,12 @@ const navSections: NavSection[] = [
         href: '/admin/recognitions',
         icon: Award,
         permission: 'admin.recognitions.read',
+      },
+      {
+        name: 'Case Exports',
+        href: '/admin/case-exports',
+        icon: Archive,
+        permission: 'admin.case.export',
       },
     ],
   },

@@ -33,7 +33,8 @@
     "migrate:error-logs": "ts-node src/db/migrate-add-error-logs-table.ts",
     "migrate:case-priority-reminder": "ts-node src/db/migrate-add-case-priority-reminder.ts",
     "migrate:daily-reports": "ts-node src/db/migrate-add-daily-reports.ts",
-    "migrate:daily-reports-permissions": "ts-node src/db/migrate-daily-reports-permissions.ts"
+    "migrate:daily-reports-permissions": "ts-node src/db/migrate-daily-reports-permissions.ts",
+    "migrate:admin-case-export-permission": "ts-node src/db/migrate-admin-case-export-permission.ts"
   },
   "dependencies": {
     "archiver": "^7.0.1",

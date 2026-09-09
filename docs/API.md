@@ -188,6 +188,15 @@ Get current authenticated user.
 | GET | `/api/crm/cases/export/:jobId` | `crm.case.export` | Job status |
 | GET | `/api/crm/cases/export/download/:jobId` | `crm.case.export` | Download archive |
 
+## Admin Exports
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/admin/cases` | `admin.case.export` | List all cases for admin export |
+| POST | `/api/admin/cases/export` | `admin.case.export` | Initiate admin export |
+| GET | `/api/admin/cases/export/:jobId` | `admin.case.export` | Admin export job status |
+| GET | `/api/admin/cases/export/download/:jobId` | `admin.case.export` | Download admin export archive |
+
 ---
 
 ## Finance

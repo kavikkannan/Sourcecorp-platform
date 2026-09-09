@@ -325,6 +325,33 @@ router.get(
 );
 
 // ============================================
+// CASE EXPORTS (ADMIN)
+// ============================================
+router.get(
+  '/cases',
+  requirePermission('admin.case.export'),
+  CRMController.getAllCasesForAdmin
+);
+
+router.post(
+  '/cases/export',
+  requirePermission('admin.case.export'),
+  CRMController.adminExportCases
+);
+
+router.get(
+  '/cases/export/:jobId',
+  requirePermission('admin.case.export'),
+  CRMController.getAdminExportJobStatus
+);
+
+router.get(
+  '/cases/export/download/:jobId',
+  requirePermission('admin.case.export'),
+  CRMController.downloadAdminExportArchive
+);
+
+// ============================================
 // RECOGNITIONS MANAGEMENT
 // ============================================
 router.post(
